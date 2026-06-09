@@ -1,6 +1,6 @@
-#include "dictionary.h"
-#include "common_utils.h"
-#include "pinyin_utils.h"
+#include "shuangpin_dictionary.h"
+#include "../common/string_utils.h"
+#include "shuangpin_utils.h"
 #include <mutex>
 #include <shared_mutex>
 #include <sqlite3.h>
@@ -10,7 +10,6 @@
 #include <utility>
 #include <regex>
 #include <cstdlib>
-#include "global_ime_vars.h"
 #include "../googlepinyinime-rev/src/include/pinyinime.h"
 #include "spdlog/spdlog.h"
 #include <boost/locale/encoding_utf.hpp>
@@ -20,12 +19,12 @@
 
 using namespace std;
 
-vector<string> DictionaryUlPb::alpha_list{
+vector<string> ShuangpinDictionary::alpha_list{
     "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", //
     "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"  //
 };
 
-vector<string> DictionaryUlPb::single_han_list{
+vector<string> ShuangpinDictionary::single_han_list{
     "啊按爱安暗阿案艾傲奥", //
     "把被不本边吧白别部比", //
     "从才此次错曾存草刺层", //
@@ -54,7 +53,7 @@ vector<string> DictionaryUlPb::single_han_list{
     "在子自做走再最怎作总"  //
 };
 
-DictionaryUlPb::DictionaryUlPb()
+ShuangpinDictionary::ShuangpinDictionary()
     : _kb_input_sequence(100), _cached_buffer(128), _cached_buffer_sgl(128), _cached_buffer_dbl(128),
       _cached_buffer_series(128)
 {
@@ -86,15 +85,15 @@ DictionaryUlPb::DictionaryUlPb()
  *
  * @param pinyin_sequence
  * @param pinyin_segmentation
- * @return vector<DictionaryUlPb::WordItem>
+ * @return vector<ShuangpinDictionary::WordItem>
  */
-vector<DictionaryUlPb::WordItem> DictionaryUlPb::generate( //
-    const string &pinyin_sequence,                         //
-    const string &pinyin_segmentation                      //
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate( //
+    const string &pinyin_sequence,                                   //
+    const string &pinyin_segmentation                                //
 )
 {
     // std::shared_lock lock(mutex_);
-    vector<DictionaryUlPb::WordItem> candidate_list;
+    vector<ShuangpinDictionary::WordItem> candidate_list;
     if (pinyin_sequence.size() == 0)
     {
         return candidate_list;
@@ -137,14 +136,14 @@ vector<DictionaryUlPb::WordItem> DictionaryUlPb::generate( //
  *
  * @param pinyin_sequence
  * @param pinyin_segmentation
- * @return vector<DictionaryUlPb::WordItem>
+ * @return vector<ShuangpinDictionary::WordItem>
  */
-vector<DictionaryUlPb::WordItem> DictionaryUlPb::generateSeries( //
-    const string &pinyin_sequence,                               //
-    const string &pinyin_segmentation                            //
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
+    const string &pinyin_sequence,                                         //
+    const string &pinyin_segmentation                                      //
 )
 {
-    vector<DictionaryUlPb::WordItem> candidate_list;
+    vector<ShuangpinDictionary::WordItem> candidate_list;
     if (pinyin_sequence.size() == 0)
     {
         return candidate_list;
@@ -164,7 +163,7 @@ vector<DictionaryUlPb::WordItem> DictionaryUlPb::generateSeries( //
         }
 
         // 查询当前的拼音严格对应的数据
-        vector<DictionaryUlPb::WordItem> cur_pinyin_cand = generate(pinyin_sequence, pinyin_segmentation);
+        vector<ShuangpinDictionary::WordItem> cur_pinyin_cand = generate(pinyin_sequence, pinyin_segmentation);
         if (cur_pinyin_cand.size() > 0)
         {
             candidate_list.insert(candidate_list.end(), cur_pinyin_cand.begin(), cur_pinyin_cand.end());
@@ -192,7 +191,7 @@ vector<DictionaryUlPb::WordItem> DictionaryUlPb::generateSeries( //
             {
                 seg_pinyin = seg_pinyin.substr(0, pos);
                 pure_pinyin = boost::algorithm::replace_all_copy(seg_pinyin, "'", "");
-                vector<DictionaryUlPb::WordItem> sub_pinyin_cand = generate(pure_pinyin, seg_pinyin);
+                vector<ShuangpinDictionary::WordItem> sub_pinyin_cand = generate(pure_pinyin, seg_pinyin);
                 candidate_list.insert(candidate_list.end(), sub_pinyin_cand.begin(), sub_pinyin_cand.end());
             }
             else
@@ -223,17 +222,17 @@ vector<DictionaryUlPb::WordItem> DictionaryUlPb::generateSeries( //
  * @param filtered_list
  * @param help_code
  */
-void DictionaryUlPb::filter_with_single_helpcode(           //
-    const vector<DictionaryUlPb::WordItem> &candidate_list, //
-    vector<DictionaryUlPb::WordItem> &result_list,          //
-    const string &help_code                                 //
+void ShuangpinDictionary::filter_with_single_helpcode(           //
+    const vector<ShuangpinDictionary::WordItem> &candidate_list, //
+    vector<ShuangpinDictionary::WordItem> &result_list,          //
+    const string &help_code                                      //
 )
 {
     if (candidate_list.empty())
         return;
-    vector<DictionaryUlPb::WordItem> first_helpcode_matched_list;
-    vector<DictionaryUlPb::WordItem> last_helpcode_matched_list;
-    vector<DictionaryUlPb::WordItem> left_helpcode_matched_list; // 被筛完之后剩下的
+    vector<ShuangpinDictionary::WordItem> first_helpcode_matched_list;
+    vector<ShuangpinDictionary::WordItem> last_helpcode_matched_list;
+    vector<ShuangpinDictionary::WordItem> left_helpcode_matched_list; // 被筛完之后剩下的
 
     for (const auto &cand : candidate_list)
     {
@@ -324,10 +323,10 @@ void DictionaryUlPb::filter_with_single_helpcode(           //
  * @param result_list
  * @param help_codes
  */
-void DictionaryUlPb::filter_with_double_helpcodes(               //
-    const std::vector<DictionaryUlPb::WordItem> &candidate_list, //
-    std::vector<DictionaryUlPb::WordItem> &result_list,          //
-    const std::string &help_codes                                //
+void ShuangpinDictionary::filter_with_double_helpcodes(               //
+    const std::vector<ShuangpinDictionary::WordItem> &candidate_list, //
+    std::vector<ShuangpinDictionary::WordItem> &result_list,          //
+    const std::string &help_codes                                     //
 )
 {
     if (candidate_list.empty())
@@ -373,13 +372,13 @@ void DictionaryUlPb::filter_with_double_helpcodes(               //
  * @param pure_pinyin_segmentation
  * @param pinyin_sequence
  * @param help_codes
- * @return vector<DictionaryUlPb::WordItem>
+ * @return vector<ShuangpinDictionary::WordItem>
  */
-vector<DictionaryUlPb::WordItem> DictionaryUlPb::generate_with_helpcodes( //
-    const string &pure_pinyin,                                            //
-    const string &pure_pinyin_segmentation,                               //
-    const string &pinyin_sequence,                                        //
-    const string &help_codes                                              //
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_with_helpcodes( //
+    const string &pure_pinyin,                                                      //
+    const string &pure_pinyin_segmentation,                                         //
+    const string &pinyin_sequence,                                                  //
+    const string &help_codes                                                        //
 )
 {
     vector<WordItem> candidate_list;
@@ -458,7 +457,7 @@ std::string VkSequenceToString(const UINT *vk_codes, size_t count)
     return result;
 }
 
-void DictionaryUlPb::generate_for_single_char(vector<DictionaryUlPb::WordItem> &candidate_list, string code)
+void ShuangpinDictionary::generate_for_single_char(vector<ShuangpinDictionary::WordItem> &candidate_list, string code)
 {
     string s = single_han_list[code[0] - 'a'];
     for (size_t i = 0; i < s.length();)
@@ -475,7 +474,7 @@ void DictionaryUlPb::generate_for_single_char(vector<DictionaryUlPb::WordItem> &
  * @param vk
  * @return int
  */
-int DictionaryUlPb::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
+int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
 {
     if (vk != 0)
     { /* 0 是造词过程中的 dummy code */
@@ -601,7 +600,7 @@ int DictionaryUlPb::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
     return 0;
 }
 
-std::string DictionaryUlPb::get_quanpin()
+std::string ShuangpinDictionary::get_quanpin()
 {
 
     string quanpin_str = PinyinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation);
@@ -609,16 +608,16 @@ std::string DictionaryUlPb::get_quanpin()
     return quanpin_str;
 }
 
-std::string DictionaryUlPb::get_quanpin_seg()
+std::string ShuangpinDictionary::get_quanpin_seg()
 {
     string quanpin_str = PinyinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation);
     return quanpin_str;
 }
 
-void DictionaryUlPb::filter_key_value_list(                       //
-    vector<DictionaryUlPb::WordItem> &candidate_list,             //
-    const vector<string> &pinyin_list,                            //
-    const vector<DictionaryUlPb::WordItem> &key_value_weight_list //
+void ShuangpinDictionary::filter_key_value_list(                       //
+    vector<ShuangpinDictionary::WordItem> &candidate_list,             //
+    const vector<string> &pinyin_list,                                 //
+    const vector<ShuangpinDictionary::WordItem> &key_value_weight_list //
 )
 {
     string regex_str("");
@@ -643,12 +642,12 @@ void DictionaryUlPb::filter_key_value_list(                       //
     }
 }
 
-vector<DictionaryUlPb::WordItem> DictionaryUlPb::generate_for_creating_word(const string code)
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_for_creating_word(const string code)
 {
     return select_complete_data(build_sql_for_creating_word(code));
 }
 
-int DictionaryUlPb::create_word(string pinyin, string word)
+int ShuangpinDictionary::create_word(string pinyin, string word)
 {
     string jp;
     for (size_t i = 0; i < pinyin.size(); i += 2)
@@ -665,10 +664,10 @@ int DictionaryUlPb::create_word(string pinyin, string word)
     return OK;
 }
 
-string DictionaryUlPb::build_sql_for_updating_word(string word)
+string ShuangpinDictionary::build_sql_for_updating_word(string word)
 {
     int han_cnt = PinyinUtil::cnt_han_chars(word);
-    string pinyin = GlobalIME::pinyin.substr(0, han_cnt * 2);
+    string pinyin = _pinyin_sequence.substr(0, han_cnt * 2);
     string jp;
     for (size_t i = 0; i < pinyin.size(); i += 2)
         jp += pinyin[i];
@@ -681,7 +680,7 @@ string DictionaryUlPb::build_sql_for_updating_word(string word)
     return res_sql;
 }
 
-string DictionaryUlPb::build_sql_for_updating_word(string pinyin, string word)
+string ShuangpinDictionary::build_sql_for_updating_word(string pinyin, string word)
 {
     int han_cnt = PinyinUtil::cnt_han_chars(word);
     pinyin = pinyin.substr(0, han_cnt * 2);
@@ -697,7 +696,7 @@ string DictionaryUlPb::build_sql_for_updating_word(string pinyin, string word)
     return res_sql;
 }
 
-string DictionaryUlPb::build_sql_for_deleting_word(string pinyin, string word)
+string ShuangpinDictionary::build_sql_for_deleting_word(string pinyin, string word)
 {
     string jp;
     for (size_t i = 0; i < pinyin.size(); i += 2)
@@ -710,7 +709,7 @@ string DictionaryUlPb::build_sql_for_deleting_word(string pinyin, string word)
     return res_sql;
 }
 
-int DictionaryUlPb::update_data(string sql_str)
+int ShuangpinDictionary::update_data(string sql_str)
 {
     sqlite3_stmt *stmt;
     int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
@@ -727,7 +726,7 @@ int DictionaryUlPb::update_data(string sql_str)
     return 0;
 }
 
-int DictionaryUlPb::delete_data(string sql_str)
+int ShuangpinDictionary::delete_data(string sql_str)
 {
     sqlite3_stmt *stmt;
     int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
@@ -744,20 +743,20 @@ int DictionaryUlPb::delete_data(string sql_str)
     return 0;
 }
 
-int DictionaryUlPb::update_weight_by_word(string word)
+int ShuangpinDictionary::update_weight_by_word(string word)
 {
     // std::unique_lock lock(mutex_);
     update_data(build_sql_for_updating_word(word));
     return OK;
 }
 
-int DictionaryUlPb::update_weight_by_pinyin_and_word(string pinyin, string word)
+int ShuangpinDictionary::update_weight_by_pinyin_and_word(string pinyin, string word)
 {
     update_data(build_sql_for_updating_word(pinyin, word));
     return OK;
 }
 
-int DictionaryUlPb::delete_by_pinyin_and_word(string pinyin, string word)
+int ShuangpinDictionary::delete_by_pinyin_and_word(string pinyin, string word)
 {
 
     delete_data(build_sql_for_deleting_word(pinyin, word));
@@ -766,7 +765,7 @@ int DictionaryUlPb::delete_by_pinyin_and_word(string pinyin, string word)
 
 // generate_with_seg_pinyin
 
-DictionaryUlPb::~DictionaryUlPb()
+ShuangpinDictionary::~ShuangpinDictionary()
 {
     if (db)
     {
@@ -774,7 +773,7 @@ DictionaryUlPb::~DictionaryUlPb()
     }
 }
 
-vector<string> DictionaryUlPb::select_data(string sql_str)
+vector<string> ShuangpinDictionary::select_data(string sql_str)
 {
     vector<string> candidateList;
     sqlite3_stmt *stmt;
@@ -791,9 +790,9 @@ vector<string> DictionaryUlPb::select_data(string sql_str)
     return candidateList;
 }
 
-vector<DictionaryUlPb::WordItem> DictionaryUlPb::select_complete_data(string sql_str)
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(string sql_str)
 {
-    vector<DictionaryUlPb::WordItem> candidateList;
+    vector<ShuangpinDictionary::WordItem> candidateList;
     sqlite3_stmt *stmt;
     int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
     if (exit != SQLITE_OK)
@@ -812,7 +811,7 @@ vector<DictionaryUlPb::WordItem> DictionaryUlPb::select_complete_data(string sql
     return candidateList;
 }
 
-vector<pair<string, string>> DictionaryUlPb::select_key_and_value(string sql_str)
+vector<pair<string, string>> ShuangpinDictionary::select_key_and_value(string sql_str)
 {
     vector<pair<string, string>> candidateList;
     sqlite3_stmt *stmt;
@@ -836,7 +835,7 @@ vector<pair<string, string>> DictionaryUlPb::select_key_and_value(string sql_str
  * @param sql_str
  * @return int
  */
-int DictionaryUlPb::check_data(string sql_str)
+int ShuangpinDictionary::check_data(string sql_str)
 {
     sqlite3_stmt *stmt;
     int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
@@ -854,7 +853,7 @@ int DictionaryUlPb::check_data(string sql_str)
     return exists;
 }
 
-int DictionaryUlPb::insert_data(string sql_str)
+int ShuangpinDictionary::insert_data(string sql_str)
 {
     sqlite3_stmt *stmt;
     int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
@@ -871,7 +870,7 @@ int DictionaryUlPb::insert_data(string sql_str)
     return 0;
 }
 
-pair<string, bool> DictionaryUlPb::build_sql(const string &sp_str, vector<string> &pinyin_list)
+pair<string, bool> ShuangpinDictionary::build_sql(const string &sp_str, vector<string> &pinyin_list)
 {
     bool all_entire_pinyin = true;
     bool all_jp = true;
@@ -936,7 +935,7 @@ pair<string, bool> DictionaryUlPb::build_sql(const string &sp_str, vector<string
     return make_pair(sql, need_filtering);
 }
 
-string DictionaryUlPb::build_sql_for_creating_word(const string &sp_str)
+string ShuangpinDictionary::build_sql_for_creating_word(const string &sp_str)
 {
     string base_sql = "select * from(select * from {} where key = '{}' order by weight desc limit {})";
     string res_sql =
@@ -955,21 +954,21 @@ string DictionaryUlPb::build_sql_for_creating_word(const string &sp_str)
     return res_sql;
 }
 
-string DictionaryUlPb::build_sql_for_checking_word(string key, string jp, string value)
+string ShuangpinDictionary::build_sql_for_checking_word(string key, string jp, string value)
 {
     string table = choose_tbl(key, jp.size());
     string base_sql = "select 1 from {} where key = '{}' and value = '{}';";
     return fmt::format(base_sql, table, key, value); // Default weight is 10,000
 }
 
-string DictionaryUlPb::build_sql_for_inserting_word(string key, string jp, string value)
+string ShuangpinDictionary::build_sql_for_inserting_word(string key, string jp, string value)
 {
     string table = choose_tbl(key, jp.size());
     string base_sql = "insert into {} (key, jp, value, weight) values ('{}', '{}', '{}', '{}');";
     return fmt::format(base_sql, table, key, jp, value, 10000); // Default weight is 10,000
 }
 
-string DictionaryUlPb::choose_tbl(const string &sp_str, size_t word_len)
+string ShuangpinDictionary::choose_tbl(const string &sp_str, size_t word_len)
 {
     string base_tbl("tbl_{}_{}");
     if (word_len >= 8)
@@ -977,7 +976,7 @@ string DictionaryUlPb::choose_tbl(const string &sp_str, size_t word_len)
     return fmt::format(base_tbl, word_len, sp_str[0]);
 }
 
-bool DictionaryUlPb::do_validate(string key, string jp, string value)
+bool ShuangpinDictionary::do_validate(string key, string jp, string value)
 {
     if (key.size() % 2 || jp.size() != key.size() / 2 || key.size() != PinyinUtil::cnt_han_chars(value) * 2)
         return false;
@@ -990,7 +989,7 @@ string from_utf16(const ime_pinyin::char16 *buf, size_t len)
     return boost::locale::conv::utf_to_utf<char>(utf16Str);
 }
 
-string DictionaryUlPb::search_sentence_from_ime_engine(const string &user_pinyin)
+string ShuangpinDictionary::search_sentence_from_ime_engine(const string &user_pinyin)
 {
     string pinyin_str = user_pinyin;
     const char *pinyin = pinyin_str.c_str();
@@ -1009,7 +1008,7 @@ string DictionaryUlPb::search_sentence_from_ime_engine(const string &user_pinyin
     return msg;
 }
 
-void DictionaryUlPb::reset_state()
+void ShuangpinDictionary::reset_state()
 {
     _is_full_help_mode = false;
     _help_mode_raw_pos = 0;
@@ -1023,7 +1022,7 @@ void DictionaryUlPb::reset_state()
     _cur_page_candidate_list.clear();
 }
 
-void DictionaryUlPb::reset_cache()
+void ShuangpinDictionary::reset_cache()
 {
     _cached_buffer.clear();
     _cached_buffer_sgl.clear();
@@ -1031,7 +1030,7 @@ void DictionaryUlPb::reset_cache()
     _cached_buffer_series.clear();
 }
 
-int DictionaryUlPb::insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word)
+int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word)
 {
     OutputDebugString(fmt::format(L"[msime]: pinyin: {}, word: {}", CommonUtils::string_to_wstring(pinyin),
                                   CommonUtils::string_to_wstring(word))
@@ -1059,13 +1058,13 @@ int DictionaryUlPb::insert_word_to_cached_buffer_series(const std::string &pinyi
     return 0;
 }
 
-bool DictionaryUlPb::is_all_complete_pinyin()
+bool ShuangpinDictionary::is_all_complete_pinyin()
 {
     bool res = PinyinUtil::is_all_complete_pinyin(_pinyin_sequence, _pinyin_segmentation);
     return res;
 }
 
-bool DictionaryUlPb::is_all_complete_pure_pinyin()
+bool ShuangpinDictionary::is_all_complete_pure_pinyin()
 {
     bool res = PinyinUtil::is_all_complete_pinyin( //
         _pure_pinyin_sequence,                     //
@@ -1073,7 +1072,7 @@ bool DictionaryUlPb::is_all_complete_pure_pinyin()
     return res;
 }
 
-std::string DictionaryUlPb::get_pinyin_segmentation_with_cases()
+std::string ShuangpinDictionary::get_pinyin_segmentation_with_cases()
 {
     string res;
     int index = 0;

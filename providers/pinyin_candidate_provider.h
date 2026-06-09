@@ -1,7 +1,8 @@
 #pragma once
 
 #include "candidate_provider.h"
-#include "../shuangpin/dictionary.h"
+#include "../quanpin/engine.h"
+#include "../shuangpin/engine.h"
 
 class PinyinCandidateProvider : public ICandidateProvider
 {
@@ -10,5 +11,6 @@ class PinyinCandidateProvider : public ICandidateProvider
     void reset_cache() override;
 
   private:
-    DictionaryUlPb shuangpin_engine_;
+    QuanpinEngine quanpin_engine_;
+    ShuangpinEngine shuangpin_engine_;
 };

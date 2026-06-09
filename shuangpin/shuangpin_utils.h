@@ -8,6 +8,12 @@
 #include <cctype>
 #include <unordered_map>
 
+namespace shuangpin
+{
+std::string get_local_appdata_path();
+std::string get_app_name();
+} // namespace shuangpin
+
 class PinyinUtil
 {
   public:

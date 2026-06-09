@@ -2,16 +2,18 @@
 #include <fmt/core.h>
 #include <sqlite3.h>
 #include "fmt/base.h"
-#include "shuangpin/dictionary.h"
+#include "shuangpin/engine.h"
 #include <chrono>
-#include "shuangpin/pinyin_utils.h"
+#include "shuangpin/shuangpin_query.h"
+#include "core/query_request.h"
 
 using namespace std;
 
 void testGenerate()
 {
-    DictionaryUlPb dict;
-    // dict.generate("yi", "yi");
+    ShuangpinEngine engine;
+    QueryRequest request;
+    request.scheme = SchemeType::Shuangpin;
     vector<UINT> sequence;
     // sequence = {'N', 'I', 'R'};
     // sequence = {'Y', 'I', 'R', 'F', 'I'};
@@ -23,12 +25,14 @@ void testGenerate()
     for (const auto &c : sequence)
     {
         std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-        dict.handleVkCode(c, 0);
+        request.key_strokes.push_back(KeyStroke{c, 0, static_cast<WCHAR>(c + ('a' - 'A'))});
         std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         fmt::println("Time: {} us", duration.count());
     }
-    std::vector<DictionaryUlPb::WordItem> result = dict.get_cur_candiate_list();
+    request.raw_input = "cls";
+    request.valid = true;
+    std::vector<WordItem> result = engine.query(request);
 
     for (const auto &[pinyin, word, weight] : result)
     {
@@ -38,10 +42,10 @@ void testGenerate()
 
 void testGetChar()
 {
-    fmt::println("First char: {}", PinyinUtil::get_first_han_char("𰻝什么东西呢"));
-    fmt::println("Last char: {}", PinyinUtil::get_last_han_char("𰻝什么东西呢"));
-    fmt::println("First char: {}", PinyinUtil::get_first_han_char("你好呀什么东西呢"));
-    fmt::println("Last char: {}", PinyinUtil::get_last_han_char("什么东西呢我的汴梁"));
+    fmt::println("First char: {}", shuangpin::get_first_han_char("𰻝什么东西呢"));
+    fmt::println("Last char: {}", shuangpin::get_last_han_char("𰻝什么东西呢"));
+    fmt::println("First char: {}", shuangpin::get_first_han_char("你好呀什么东西呢"));
+    fmt::println("Last char: {}", shuangpin::get_last_han_char("什么东西呢我的汴梁"));
 }
 
 int main(int argc, char *argv[])

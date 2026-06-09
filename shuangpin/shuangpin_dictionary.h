@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common_utils.h"
+#include "../common/cache.h"
 #include <windows.h>
 #include <shared_mutex>
 #include <array>
@@ -13,7 +13,7 @@
 #include <memory>
 #include <boost/algorithm/string.hpp>
 
-class DictionaryUlPb
+class ShuangpinDictionary
 {
   public:
     /**
@@ -32,9 +32,9 @@ class DictionaryUlPb
         const std::string &pinyin_sequence,    //
         const std::string &pinyin_segmentation //
     );
-    std::vector<DictionaryUlPb::WordItem> DictionaryUlPb::generateSeries( //
-        const std::string &pinyin_sequence,                               //
-        const std::string &pinyin_segmentation                            //
+    std::vector<WordItem> generateSeries(      //
+        const std::string &pinyin_sequence,    //
+        const std::string &pinyin_segmentation //
     );
     std::vector<WordItem> generate_with_helpcodes(   //
         const std::string &pure_pinyin,              //
@@ -58,8 +58,8 @@ class DictionaryUlPb
 
     std::string search_sentence_from_ime_engine(const std::string &user_pinyin);
 
-    DictionaryUlPb();
-    ~DictionaryUlPb();
+    ShuangpinDictionary();
+    ~ShuangpinDictionary();
 
   private:
     std::ifstream inputFile;
@@ -180,9 +180,14 @@ class DictionaryUlPb
         return this->_pure_pinyin_sequence;
     }
 
-    const std::vector<DictionaryUlPb::WordItem> &get_cur_candiate_list()
+    const std::vector<WordItem> &get_current_candidate_list() const
     {
         return this->_cur_candidate_list;
+    }
+
+    const std::vector<WordItem> &get_cur_candiate_list() const
+    {
+        return get_current_candidate_list();
     }
 
     int insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word);
@@ -197,3 +202,5 @@ class DictionaryUlPb
     void reset_state();
     void reset_cache();
 };
+
+using DictionaryUlPb = ShuangpinDictionary;

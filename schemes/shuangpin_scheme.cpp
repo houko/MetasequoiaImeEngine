@@ -1,6 +1,5 @@
 #include "shuangpin_scheme.h"
-#include "../shuangpin/pinyin_utils.h"
-#include <boost/algorithm/string/replace.hpp>
+#include "../shuangpin/shuangpin_query.h"
 
 namespace
 {
@@ -70,9 +69,8 @@ QueryRequest ShuangpinScheme::build_request() const
         return request;
     }
 
-    const std::string segmentation = PinyinUtil::pinyin_segmentation(raw_input_);
-    request.segmentation = PinyinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(segmentation);
-    request.normalized_input = boost::replace_all_copy(request.segmentation, "'", "");
+    request.segmentation = shuangpin::to_quanpin_segmentation(shuangpin::segment_input(raw_input_));
+    request.normalized_input = shuangpin::normalize_input(raw_input_);
     return request;
 }
 

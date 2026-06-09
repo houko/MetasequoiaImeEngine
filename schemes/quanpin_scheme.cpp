@@ -1,4 +1,5 @@
 #include "quanpin_scheme.h"
+#include "../quanpin/quanpin_query.h"
 #include <cctype>
 
 namespace
@@ -62,7 +63,6 @@ QueryRequest QuanpinScheme::build_request() const
     QueryRequest request;
     request.scheme = type();
     request.raw_input = raw_input_;
-    request.segmentation = raw_input_;
     request.normalized_input.reserve(raw_input_.size());
     for (const char ch : raw_input_)
     {
@@ -71,6 +71,26 @@ QueryRequest QuanpinScheme::build_request() const
             request.normalized_input.push_back(ch);
         }
     }
+    if (!request.normalized_input.empty())
+    {
+        try
+        {
+            const auto segments = quanpin::cut_pinyin_by_mode(raw_input_, "correction");
+            if (!segments.empty())
+            {
+                request.segmentation = quanpin::join_segments(segments.front());
+            }
+        }
+        catch (...)
+        {
+        }
+    }
+
+    if (request.segmentation.empty())
+    {
+        request.segmentation = raw_input_;
+    }
+
     request.valid = !request.normalized_input.empty();
     return request;
 }

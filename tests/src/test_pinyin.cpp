@@ -57,11 +57,9 @@ void test_shuangpin_session02()
 
 void test_quanpin_session()
 {
-    // ImeSession session(SchemeType::Quanpin);
-    ImeSession session(SchemeType::Shuangpin);
-    // const vector<UINT> sequence{'C', 'E', 'L', 'I', 'S', 'H', 'I'};
-    const vector<UINT> sequence{'C', 'E', 'L', 'I', 'U', 'I'};
-    const vector<WCHAR> wch_sequence{'c', 'e', 'l', 'i', 'u', 'i'};
+    ImeSession session(SchemeType::Quanpin);
+    const vector<UINT> sequence{'C', 'E', 'S', 'H', 'I'};
+    const vector<WCHAR> wch_sequence{'c', 'e', 's', 'h', 'i'};
 
     fmt::println("==== Quanpin ====");
     feed_sequence(session, sequence, wch_sequence);
@@ -87,7 +85,7 @@ int main(int argc, char *argv[])
 {
     test_shuangpin_session();
     test_shuangpin_session02();
-    // test_quanpin_session();
+    test_quanpin_session();
     test_dynamic_switch();
     return 0;
 }

@@ -1,0 +1,76 @@
+#pragma once
+
+#include "../common/cache.h"
+#include "../core/word_item.h"
+#include <sqlite3.h>
+#include <string>
+#include <vector>
+#include <windows.h>
+
+class QuanpinDictionary
+{
+  public:
+    static const int OK = 0;
+    static const int ERROR_CODE = -1;
+
+    QuanpinDictionary();
+    ~QuanpinDictionary();
+
+    std::vector<WordItem> query(const std::string &raw_input, const std::string &segmentation = "");
+    int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
+
+    int create_word(std::string pinyin, std::string word);
+    int update_weight_by_word(std::string word);
+    int update_weight_by_pinyin_and_word(std::string pinyin, std::string word);
+    int delete_by_pinyin_and_word(std::string pinyin, std::string word);
+
+    std::string search_sentence_from_ime_engine(const std::string &user_pinyin);
+
+    void reset_state();
+    void reset_cache();
+
+    const std::string &get_pinyin_sequence() const
+    {
+        return pinyin_sequence_;
+    }
+
+    const std::string &get_pinyin_segmentation() const
+    {
+        return pinyin_segmentation_;
+    }
+
+    const std::vector<WordItem> &get_current_candidate_list() const
+    {
+        return current_candidate_list_;
+    }
+
+  private:
+    std::vector<WordItem> query_database(const std::string &raw_input, const std::string &segmentation);
+    std::vector<WordItem> append_ime_fallback(const std::string &raw_input, const std::string &segmentation,
+                                              std::vector<WordItem> result);
+
+    std::vector<std::string> select_data(const std::string &sql_str);
+    std::vector<WordItem> select_complete_data(const std::string &sql_str);
+    int check_data(const std::string &sql_str);
+    int insert_data(const std::string &sql_str);
+    int update_data(const std::string &sql_str);
+    int delete_data(const std::string &sql_str);
+
+    std::string build_sql_for_creating_word(const std::string &pinyin);
+    std::string build_sql_for_checking_word(const std::string &key, const std::string &jp, const std::string &value);
+    std::string build_sql_for_inserting_word(const std::string &key, const std::string &jp, const std::string &value);
+    std::string build_sql_for_updating_word(const std::string &word);
+    std::string build_sql_for_updating_word(std::string pinyin, const std::string &word);
+    std::string build_sql_for_deleting_word(std::string pinyin, const std::string &word);
+    bool do_validate(const std::string &key, const std::string &jp, const std::string &value);
+
+  private:
+    CircularBuffer<std::string, std::vector<WordItem>> cache_;
+    sqlite3 *db_ = nullptr;
+    std::string db_path_;
+    bool decoder_ready_ = false;
+
+    std::string pinyin_sequence_;
+    std::string pinyin_segmentation_;
+    std::vector<WordItem> current_candidate_list_;
+};

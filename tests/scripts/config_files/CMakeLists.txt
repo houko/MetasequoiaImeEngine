@@ -36,10 +36,20 @@ include_directories("../utfcpp/source/")
 set(MY_EXECUTABLE_NAME "imetest")
 set(
     SOURCE_FILES
-    "./src/test_shuangpin.cpp"
-    "../shuangpin/common_utils.cpp"
-    "../shuangpin/dictionary.cpp"
-    "../shuangpin/pinyin_utils.cpp"
+    "./src/test_pinyin.cpp"
+    "../core/ime_session.cpp"
+    "../providers/pinyin_candidate_provider.cpp"
+    "../providers/provider_registry.cpp"
+    "../schemes/shuangpin_scheme.cpp"
+    "../schemes/quanpin_scheme.cpp"
+    "../quanpin/engine.cpp"
+    "../quanpin/quanpin_dictionary.cpp"
+    "../quanpin/quanpin_query.cpp"
+    "../shuangpin/engine.cpp"
+    "../common/string_utils.cpp"
+    "../shuangpin/shuangpin_dictionary.cpp"
+    "../shuangpin/shuangpin_query.cpp"
+    "../shuangpin/shuangpin_utils.cpp"
     # Google IME
     "../googlepinyinime-rev/src/share/dictbuilder.cpp"
     "../googlepinyinime-rev/src/share/dictlist.cpp"

@@ -3,7 +3,7 @@
 #include <vector>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
-#include "pinyin_utils.h"
+#include "shuangpin_utils.h"
 
 using namespace std;
 
@@ -548,3 +548,18 @@ bool PinyinUtil::IsFullHelpMode(std::string pinyin)
     }
     return false;
 }
+
+namespace shuangpin
+{
+
+std::string get_local_appdata_path()
+{
+    return PinyinUtil::get_local_appdata_path();
+}
+
+std::string get_app_name()
+{
+    return PinyinUtil::app_name;
+}
+
+} // namespace shuangpin
