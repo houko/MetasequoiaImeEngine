@@ -13,16 +13,20 @@ bool is_alpha_vk(UINT vk)
 void QuanpinScheme::reset()
 {
     raw_input_.clear();
+    key_strokes_.clear();
 }
 
 void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
 {
-    (void)modifiers_down;
     if (vk == VK_BACK)
     {
         if (!raw_input_.empty())
         {
             raw_input_.pop_back();
+        }
+        if (!key_strokes_.empty())
+        {
+            key_strokes_.pop_back();
         }
         return;
     }
@@ -35,6 +39,7 @@ void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
 
     if (vk == VK_OEM_7)
     {
+        key_strokes_.push_back(KeyStroke{vk, modifiers_down, wch});
         raw_input_.push_back('\'');
         return;
     }
@@ -44,6 +49,7 @@ void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
+    key_strokes_.push_back(KeyStroke{vk, modifiers_down, wch});
     if (wch >= L'A' && wch <= L'Z')
     {
         raw_input_.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(wch))));
@@ -63,6 +69,7 @@ QueryRequest QuanpinScheme::build_request() const
     QueryRequest request;
     request.scheme = type();
     request.raw_input = raw_input_;
+    request.key_strokes = key_strokes_;
     request.normalized_input.reserve(raw_input_.size());
     for (const char ch : raw_input_)
     {

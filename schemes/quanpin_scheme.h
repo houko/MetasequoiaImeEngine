@@ -2,6 +2,7 @@
 
 #include "input_scheme.h"
 #include <string>
+#include <vector>
 
 class QuanpinScheme : public IInputScheme
 {
@@ -14,4 +15,5 @@ class QuanpinScheme : public IInputScheme
 
   private:
     std::string raw_input_;
+    std::vector<KeyStroke> key_strokes_;
 };

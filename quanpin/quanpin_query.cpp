@@ -352,8 +352,8 @@ std::string get_default_db_path()
 
 QueryResult query_words(const std::string &pinyin, const std::string &db_path, const std::string &mode, int limit)
 {
-    QueryResult result{pinyin, mode, {}};
     const auto cuts = cut_pinyin_by_mode(pinyin, mode);
+    QueryResult result{pinyin, mode, {}};
     if (cuts.empty())
     {
         return result;
@@ -370,6 +370,79 @@ QueryResult query_words(const std::string &pinyin, const std::string &db_path, c
         });
     }
     return result;
+}
+
+QueryResult query_segments(const Segments &segments, const std::string &db_path, int limit)
+{
+    QueryResult result{join_segments(segments), "precut", {}};
+    if (segments.empty())
+    {
+        return result;
+    }
+
+    SqliteDb db(db_path);
+    result.results.push_back(QueryResultEntry{
+        segments,
+        join_segments(segments),
+        build_table_name(segments),
+        query_single_cut(db.get(), segments, limit),
+    });
+    return result;
+}
+
+std::vector<QueryItem> query_words_flat(const std::string &pinyin, const std::string &db_path, const std::string &mode,
+                                        int limit)
+{
+    const auto result = query_words(pinyin, db_path, mode, limit);
+    std::vector<QueryItem> items;
+    std::unordered_set<std::string> seen;
+    for (const auto &entry : result.results)
+    {
+        for (const auto &item : entry.items)
+        {
+            if (seen.insert(item.first).second)
+            {
+                items.push_back(item);
+            }
+        }
+    }
+
+    std::sort(items.begin(), items.end(), [](const QueryItem &lhs, const QueryItem &rhs) {
+        return lhs.second > rhs.second;
+    });
+
+    if (static_cast<int>(items.size()) > limit)
+    {
+        items.resize(static_cast<size_t>(limit));
+    }
+    return items;
+}
+
+std::vector<QueryItem> query_segments_flat(const Segments &segments, const std::string &db_path, int limit)
+{
+    const auto result = query_segments(segments, db_path, limit);
+    std::vector<QueryItem> items;
+    std::unordered_set<std::string> seen;
+    for (const auto &entry : result.results)
+    {
+        for (const auto &item : entry.items)
+        {
+            if (seen.insert(item.first).second)
+            {
+                items.push_back(item);
+            }
+        }
+    }
+
+    std::sort(items.begin(), items.end(), [](const QueryItem &lhs, const QueryItem &rhs) {
+        return lhs.second > rhs.second;
+    });
+
+    if (static_cast<int>(items.size()) > limit)
+    {
+        items.resize(static_cast<size_t>(limit));
+    }
+    return items;
 }
 
 } // namespace quanpin

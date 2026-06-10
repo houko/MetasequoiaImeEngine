@@ -14,7 +14,7 @@ std::string get_local_appdata_path();
 std::string get_app_name();
 } // namespace shuangpin
 
-class PinyinUtil
+class ShuangpinUtil
 {
   public:
     static std::string get_local_appdata_path();
@@ -37,7 +37,7 @@ class PinyinUtil
     static std::string get_last_han_char(const std::string &words);
     static std::string::size_type get_last_char_size(std::string words);
     static std::string::size_type cnt_han_chars(std::string words);
-    static std::string::size_type PinyinUtil::count_utf8_chars(const std::string &str);
+    static std::string::size_type ShuangpinUtil::count_utf8_chars(const std::string &str);
     static std::string compute_helpcodes(std::string words);
     static std::string extract_preview(std::string candidate);
     static bool is_all_complete_pinyin(std::string pure_pinyin, std::string seg_pinyin);

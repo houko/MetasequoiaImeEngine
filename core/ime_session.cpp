@@ -10,6 +10,7 @@ ImeSession::ImeSession(SchemeType scheme_type) : scheme_(create_scheme(scheme_ty
 void ImeSession::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
 {
     scheme_->handle_key(vk, modifiers_down, wch);
+    // 查询并更新候选词列表
     refresh_candidates();
 }
 

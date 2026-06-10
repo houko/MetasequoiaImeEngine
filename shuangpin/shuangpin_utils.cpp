@@ -7,7 +7,7 @@
 
 using namespace std;
 
-const string PinyinUtil::app_name = "MetasequoiaImeTsf";
+const string ShuangpinUtil::app_name = "MetasequoiaImeTsf";
 static string path_seperator = "\\";
 static string pinyin_file_name = "pinyin.txt";
 static string helpcode_file_name = "helpcode.txt";
@@ -17,7 +17,7 @@ static string helpcode_file_name = "helpcode.txt";
  *
  * @return string The path of local app data directory
  */
-string PinyinUtil::get_local_appdata_path()
+string ShuangpinUtil::get_local_appdata_path()
 {
     char *localAppDataDir = nullptr;
     std::string localAppDataDirStr;
@@ -34,21 +34,21 @@ string PinyinUtil::get_local_appdata_path()
 }
 
 // LocalAppData path
-string PinyinUtil::local_appdata_path = PinyinUtil::get_local_appdata_path();
+string ShuangpinUtil::local_appdata_path = ShuangpinUtil::get_local_appdata_path();
 
-unordered_map<string, string> PinyinUtil::sm_keymaps{
+unordered_map<string, string> ShuangpinUtil::sm_keymaps{
     {"sh", "u"}, //
     {"ch", "i"}, //
     {"zh", "v"}  //
 };
 
-unordered_map<string, string> PinyinUtil::sm_keymaps_reversed{
+unordered_map<string, string> ShuangpinUtil::sm_keymaps_reversed{
     {"u", "sh"}, //
     {"i", "ch"}, //
     {"v", "zh"}  //
 };
 
-unordered_map<string, string> PinyinUtil::zero_sm_keymaps{
+unordered_map<string, string> ShuangpinUtil::zero_sm_keymaps{
     {"a", "aa"},   //
     {"ai", "ai"},  //
     {"ao", "ao"},  //
@@ -62,7 +62,7 @@ unordered_map<string, string> PinyinUtil::zero_sm_keymaps{
     {"ou", "ou"}   //
 };
 
-unordered_map<string, string> PinyinUtil::zero_sm_keymaps_reversed{
+unordered_map<string, string> ShuangpinUtil::zero_sm_keymaps_reversed{
     {"aa", "a"},   //
     {"ai", "ai"},  //
     {"an", "an"},  //
@@ -77,7 +77,7 @@ unordered_map<string, string> PinyinUtil::zero_sm_keymaps_reversed{
     {"ou", "ou"}   //
 };
 
-unordered_map<string, string> PinyinUtil::ym_keymaps{
+unordered_map<string, string> ShuangpinUtil::ym_keymaps{
     {"iu", "q"},   //
     {"ei", "w"},   //
     {"e", "e"},    //
@@ -113,7 +113,7 @@ unordered_map<string, string> PinyinUtil::ym_keymaps{
     {"ian", "m"}   //
 };
 
-unordered_map<string, string> PinyinUtil::ym_keymaps_reversed{
+unordered_map<string, string> ShuangpinUtil::ym_keymaps_reversed{
     {"q", "iu"},   //
     {"w", "ei"},   //
     {"e", "e"},    //
@@ -145,9 +145,9 @@ unordered_map<string, string> PinyinUtil::ym_keymaps_reversed{
 unordered_set<string> &initialize_quanpin_set()
 {
     static unordered_set<string> tmp_set;
-    ifstream pinyin_path(PinyinUtil::get_local_appdata_path() //
+    ifstream pinyin_path(ShuangpinUtil::get_local_appdata_path() //
                          + path_seperator                     //
-                         + PinyinUtil::app_name               //
+                         + ShuangpinUtil::app_name            //
                          + path_seperator                     //
                          + pinyin_file_name                   //
     );
@@ -164,14 +164,14 @@ unordered_set<string> &initialize_quanpin_set()
     return tmp_set;
 }
 
-unordered_set<string> &PinyinUtil::quanpin_set = initialize_quanpin_set();
+unordered_set<string> &ShuangpinUtil::quanpin_set = initialize_quanpin_set();
 
 unordered_map<string, string> &initialize_helpcode_keymap()
 {
     static unordered_map<string, string> tmp_map;
-    ifstream helpcode_path(PinyinUtil::get_local_appdata_path() //
+    ifstream helpcode_path(ShuangpinUtil::get_local_appdata_path() //
                            + path_seperator                     //
-                           + PinyinUtil::app_name               //
+                           + ShuangpinUtil::app_name            //
                            + path_seperator                     //
                            + helpcode_file_name                 //
     );
@@ -187,7 +187,7 @@ unordered_map<string, string> &initialize_helpcode_keymap()
     }
     return tmp_map;
 }
-unordered_map<string, string> &PinyinUtil::helpcode_keymap = initialize_helpcode_keymap();
+unordered_map<string, string> &ShuangpinUtil::helpcode_keymap = initialize_helpcode_keymap();
 
 /*
 
@@ -202,7 +202,7 @@ unordered_map<string, string> &PinyinUtil::helpcode_keymap = initialize_helpcode
  * @param sp_str Shuangpin string
  * @return string Quanpin string
  */
-string PinyinUtil::cvt_single_sp_to_pinyin(string sp_str)
+string ShuangpinUtil::cvt_single_sp_to_pinyin(string sp_str)
 {
     if (zero_sm_keymaps_reversed.count(sp_str) > 0)
     {
@@ -250,7 +250,7 @@ string PinyinUtil::cvt_single_sp_to_pinyin(string sp_str)
  * @param sp_str Shuangpin string
  * @return string Segmented string with '
  */
-string PinyinUtil::pinyin_segmentation(string sp_str)
+string ShuangpinUtil::pinyin_segmentation(string sp_str)
 {
     if (sp_str.size() == 1)
     {
@@ -298,7 +298,7 @@ string PinyinUtil::pinyin_segmentation(string sp_str)
  * @param words
  * @return std::string
  */
-std::string PinyinUtil::get_first_han_char(const std::string &words)
+std::string ShuangpinUtil::get_first_han_char(const std::string &words)
 {
     auto it = words.begin();
     auto end = words.end();
@@ -318,7 +318,7 @@ std::string PinyinUtil::get_first_han_char(const std::string &words)
  * @param words UTF-8 string
  * @return string::size_type Char size
  */
-string::size_type PinyinUtil::get_first_char_size(string words)
+string::size_type ShuangpinUtil::get_first_char_size(string words)
 {
     size_t cplen = 1;
     // https://en.wikipedia.org/wiki/UTF-8#Description
@@ -339,7 +339,7 @@ string::size_type PinyinUtil::get_first_char_size(string words)
  * @param words
  * @return std::string
  */
-std::string PinyinUtil::get_last_han_char(const std::string &words)
+std::string ShuangpinUtil::get_last_han_char(const std::string &words)
 {
     auto it = words.begin();
     auto end = words.end();
@@ -360,7 +360,7 @@ std::string PinyinUtil::get_last_han_char(const std::string &words)
  * @param words UTF-8 string
  * @return string::size_type Char size
  */
-string::size_type PinyinUtil::get_last_char_size(string words)
+string::size_type ShuangpinUtil::get_last_char_size(string words)
 {
     size_t prev_index = 0, index = 0, cnt = 0;
     while (index < words.size())
@@ -379,7 +379,7 @@ string::size_type PinyinUtil::get_last_char_size(string words)
  * @param words UTF-8 string
  * @return string::size_type Count of hanzi
  */
-string::size_type PinyinUtil::cnt_han_chars(string words)
+string::size_type ShuangpinUtil::cnt_han_chars(string words)
 {
     size_t index = 0, cnt = 0;
     while (index < words.size())
@@ -397,7 +397,7 @@ string::size_type PinyinUtil::cnt_han_chars(string words)
  * @param str
  * @return string::size_type
  */
-string::size_type PinyinUtil::count_utf8_chars(const string &str)
+string::size_type ShuangpinUtil::count_utf8_chars(const string &str)
 {
     return utf8::distance(str.begin(), str.end());
 }
@@ -411,7 +411,7 @@ string::size_type PinyinUtil::count_utf8_chars(const string &str)
  * @param words UTF-8 string
  * @return string Helpcodes surrounded by ()
  */
-string PinyinUtil::compute_helpcodes(string words)
+string ShuangpinUtil::compute_helpcodes(string words)
 {
     string helpcodes("");
     if (cnt_han_chars(words) == 1)
@@ -459,7 +459,7 @@ string PinyinUtil::compute_helpcodes(string words)
  * @param candidate UTF-8 string
  * @return string Pure hanzi string
  */
-string PinyinUtil::extract_preview(string candidate)
+string ShuangpinUtil::extract_preview(string candidate)
 {
     size_t start_pos = candidate.find('(');
     if (start_pos != string::npos)
@@ -477,7 +477,7 @@ string PinyinUtil::extract_preview(string candidate)
  * @return true If all pinyin is quanpin
  * @return false Otherwise
  */
-bool PinyinUtil::is_all_complete_pinyin(string pure_pinyin, string seg_pinyin)
+bool ShuangpinUtil::is_all_complete_pinyin(string pure_pinyin, string seg_pinyin)
 {
     if (pure_pinyin.size() % 2)
         return false;
@@ -498,7 +498,7 @@ bool PinyinUtil::is_all_complete_pinyin(string pure_pinyin, string seg_pinyin)
  * @param seg_shangpin Segmented shuangpin
  * @return string Segmented quanpin
  */
-string PinyinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(string seg_shangpin)
+string ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(string seg_shangpin)
 {
     vector<string> splitted_shuangpin;
     boost::split(splitted_shuangpin, seg_shangpin, boost::is_any_of("'"));
@@ -531,7 +531,7 @@ string PinyinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(string seg_shang
  * @return true 是偶数个汉字，且最后一个拼音是大写字母，且前面的拼音都是完整的双拼
  * @return false
  */
-bool PinyinUtil::IsFullHelpMode(std::string pinyin)
+bool ShuangpinUtil::IsFullHelpMode(std::string pinyin)
 {
     auto len = pinyin.size();
     if (len == 0 || len == 2)
@@ -554,12 +554,12 @@ namespace shuangpin
 
 std::string get_local_appdata_path()
 {
-    return PinyinUtil::get_local_appdata_path();
+    return ShuangpinUtil::get_local_appdata_path();
 }
 
 std::string get_app_name()
 {
-    return PinyinUtil::app_name;
+    return ShuangpinUtil::app_name;
 }
 
 } // namespace shuangpin

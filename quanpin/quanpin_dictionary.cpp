@@ -32,7 +32,7 @@ std::string remove_delimiters(const std::string &segmented)
 
 } // namespace
 
-QuanpinDictionary::QuanpinDictionary() : cache_(128), db_path_(quanpin::get_default_db_path())
+QuanpinDictionary::QuanpinDictionary() : cache_(128), segmentation_cache_(128), db_path_(quanpin::get_default_db_path())
 {
     ime_pinyin::im_set_max_lens(128, 64);
     decoder_ready_ = ime_pinyin::im_open_decoder(
@@ -74,8 +74,8 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
     }
     else
     {
-        const auto segments = quanpin::cut_pinyin_by_mode(raw_input, "correction");
-        pinyin_segmentation_ = segments.empty() ? raw_input : quanpin::join_segments(segments.front());
+        const quanpin::Segments segments = get_or_compute_segments(raw_input);
+        pinyin_segmentation_ = segments.empty() ? raw_input : quanpin::join_segments(segments);
     }
 
     const std::string cache_key = remove_delimiters(pinyin_segmentation_);
@@ -85,11 +85,25 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
         return current_candidate_list_;
     }
 
-    auto result = query_database(raw_input, pinyin_segmentation_);
+    const auto segments = get_or_compute_segments(raw_input);
+    std::vector<WordItem> result = query_database(segments, pinyin_segmentation_);
     result = append_ime_fallback(raw_input, pinyin_segmentation_, std::move(result));
     cache_.insert(cache_key, result);
     current_candidate_list_ = result;
     return current_candidate_list_;
+}
+
+quanpin::Segments QuanpinDictionary::get_or_compute_segments(const std::string &raw_input)
+{
+    if (auto cached = segmentation_cache_.get(raw_input))
+    {
+        return cached.value();
+    }
+
+    const auto cuts = quanpin::cut_pinyin_by_mode(raw_input, "correction");
+    const auto segments = cuts.empty() ? quanpin::Segments{} : cuts.front();
+    segmentation_cache_.insert(raw_input, segments);
+    return segments;
 }
 
 int QuanpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
@@ -132,7 +146,8 @@ int QuanpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
     return OK;
 }
 
-std::vector<WordItem> QuanpinDictionary::query_database(const std::string &raw_input, const std::string &segmentation)
+std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments &segments,
+                                                        const std::string &segmentation)
 {
     if (db_ == nullptr)
     {
@@ -141,21 +156,14 @@ std::vector<WordItem> QuanpinDictionary::query_database(const std::string &raw_i
 
     try
     {
-        const auto query_result = quanpin::query_words(raw_input, db_path_, "correction", 80);
+        const auto flat_items = quanpin::query_segments_flat(segments, db_path_, 80);
         std::vector<WordItem> result;
-        std::unordered_set<std::string> seen;
-        for (const auto &entry : query_result.results)
+        result.reserve(flat_items.size());
+        const std::string code = segmentation.empty() ? quanpin::join_segments(segments) : segmentation;
+        for (const auto &[word, weight] : flat_items)
         {
-            const std::string code = quanpin::join_segments(entry.segments);
-            for (const auto &[word, weight] : entry.items)
-            {
-                if (seen.insert(word).second)
-                {
-                    result.emplace_back(code, word, weight);
-                }
-            }
+            result.emplace_back(code, word, weight);
         }
-        (void)segmentation;
         return result;
     }
     catch (const std::exception &ex)
@@ -169,6 +177,11 @@ std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &
                                                              const std::string &segmentation,
                                                              std::vector<WordItem> result)
 {
+    if (!result.empty())
+    {
+        return result;
+    }
+
     const std::string normalized = remove_delimiters(segmentation.empty() ? raw_input : segmentation);
     const std::string sentence = search_sentence_from_ime_engine(normalized);
     if (sentence.empty())
@@ -267,6 +280,7 @@ void QuanpinDictionary::reset_state()
 void QuanpinDictionary::reset_cache()
 {
     cache_.clear();
+    segmentation_cache_.clear();
 }
 
 std::vector<std::string> QuanpinDictionary::select_data(const std::string &sql_str)
@@ -458,7 +472,7 @@ std::string QuanpinDictionary::build_sql_for_updating_word(std::string pinyin, c
         return "";
     }
 
-    size_t han_cnt = PinyinUtil::cnt_han_chars(word);
+    size_t han_cnt = ShuangpinUtil::cnt_han_chars(word);
     auto segments = cuts.front();
     if (segments.size() > han_cnt)
     {
@@ -503,7 +517,7 @@ bool QuanpinDictionary::do_validate(const std::string &key, const std::string &j
     {
         return false;
     }
-    if (jp.size() != PinyinUtil::cnt_han_chars(value))
+    if (jp.size() != ShuangpinUtil::cnt_han_chars(value))
     {
         return false;
     }
