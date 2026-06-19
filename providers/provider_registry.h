@@ -7,6 +7,7 @@ class ProviderRegistry
 {
   public:
     ICandidateProvider &resolve(SchemeType scheme_type);
+    void reset_cache(SchemeType scheme_type);
 
   private:
     PinyinCandidateProvider pinyin_provider_;

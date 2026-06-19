@@ -26,6 +26,12 @@ void ImeSession::reset()
     state_ = CompositionState{};
 }
 
+void ImeSession::reset_cache()
+{
+    provider_registry_.reset_cache(current_scheme_type());
+    refresh_candidates();
+}
+
 SchemeType ImeSession::current_scheme_type() const
 {
     return scheme_->type();

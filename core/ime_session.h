@@ -14,6 +14,7 @@ class ImeSession
     void handle_key(UINT vk, UINT modifiers_down = 0, WCHAR wch = 0);
     void switch_scheme(SchemeType scheme_type);
     void reset();
+    void reset_cache();
 
     SchemeType current_scheme_type() const;
     const std::string &get_preedit() const;
