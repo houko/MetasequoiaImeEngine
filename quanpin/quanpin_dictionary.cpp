@@ -53,6 +53,13 @@ QuanpinDictionary::QuanpinDictionary() : cache_(128), segmentation_cache_(128), 
 
 QuanpinDictionary::~QuanpinDictionary()
 {
+    for (auto &[sql, stmt] : statement_cache_)
+    {
+        if (stmt != nullptr)
+        {
+            sqlite3_finalize(stmt);
+        }
+    }
     if (db_ != nullptr)
     {
         sqlite3_close(db_);
@@ -156,7 +163,7 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
 
     try
     {
-        const auto flat_items = quanpin::query_segments_flat(segments, db_path_, 80);
+        const auto flat_items = quanpin::query_segments_flat(segments, db_, statement_cache_, 80);
         std::vector<WordItem> result;
         result.reserve(flat_items.size());
         const std::string code = segmentation.empty() ? quanpin::join_segments(segments) : segmentation;

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <sqlite3.h>
+
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -37,5 +40,9 @@ QueryResult query_segments(const Segments &segments, const std::string &db_path,
 std::vector<QueryItem> query_words_flat(const std::string &pinyin, const std::string &db_path,
                                         const std::string &mode = "greedy", int limit = 8);
 std::vector<QueryItem> query_segments_flat(const Segments &segments, const std::string &db_path, int limit = 8);
+std::vector<QueryItem> query_segments_flat(const Segments &segments,
+                                           sqlite3 *db,
+                                           std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                           int limit = 8);
 
 } // namespace quanpin

@@ -1,6 +1,6 @@
 #include "engine.h"
 
-#include <fmt/base.h>
+#include "shuangpin_query.h"
 
 std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
 {
@@ -8,15 +8,7 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
     {
         return {};
     }
-
-    dictionary_.reset_state();
-    for (const auto &key_stroke : request.key_strokes)
-    {
-        fmt::println("Handling keystroke: vk={}", key_stroke.vk);
-        dictionary_.handleVkCode(key_stroke.vk, key_stroke.modifiers_down, key_stroke.wch);
-    }
-    fmt::println("length: {}", dictionary_.get_current_candidate_list().size());
-    return dictionary_.get_current_candidate_list();
+    return dictionary_.generateSeries(request.raw_input, shuangpin::segment_input(request.raw_input));
 }
 
 std::string ShuangpinEngine::search_sentence_from_ime_engine(const std::string &user_pinyin)

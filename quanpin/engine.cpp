@@ -1,7 +1,5 @@
 #include "engine.h"
 
-#include <fmt/base.h>
-
 QuanpinEngine::QuanpinEngine() = default;
 
 QuanpinEngine::~QuanpinEngine() = default;
@@ -12,15 +10,7 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
     {
         return {};
     }
-
-    dictionary_.reset_state();
-    for (const auto &key_stroke : request.key_strokes)
-    {
-        fmt::println("Handling keystroke: vk={}", key_stroke.vk);
-        dictionary_.handleVkCode(key_stroke.vk, key_stroke.modifiers_down, key_stroke.wch);
-    }
-    fmt::println("length: {}", dictionary_.get_current_candidate_list().size());
-    return dictionary_.get_current_candidate_list();
+    return dictionary_.query(request.raw_input, request.segmentation);
 }
 
 int QuanpinEngine::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)

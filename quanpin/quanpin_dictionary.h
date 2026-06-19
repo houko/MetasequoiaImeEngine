@@ -5,6 +5,7 @@
 #include "quanpin_query.h"
 #include <sqlite3.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <windows.h>
 
@@ -70,6 +71,7 @@ class QuanpinDictionary
     CircularBuffer<std::string, std::vector<WordItem>> cache_;
     CircularBuffer<std::string, quanpin::Segments> segmentation_cache_;
     sqlite3 *db_ = nullptr;
+    std::unordered_map<std::string, sqlite3_stmt *> statement_cache_;
     std::string db_path_;
     bool decoder_ready_ = false;
 

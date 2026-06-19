@@ -5,6 +5,7 @@
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace quanpin
@@ -198,6 +199,44 @@ std::vector<QueryItem> run_query(sqlite3 *db, const std::string &sql, const std:
     return rows;
 }
 
+std::vector<QueryItem> run_query(sqlite3 *db,
+                                 std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                 const std::string &sql,
+                                 const std::string &value,
+                                 int limit)
+{
+    sqlite3_stmt *stmt = nullptr;
+    const auto found = statement_cache.find(sql);
+    if (found != statement_cache.end())
+    {
+        stmt = found->second;
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    else
+    {
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            return {};
+        }
+        statement_cache.emplace(sql, stmt);
+    }
+
+    sqlite3_bind_text(stmt, 1, value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+
+    std::vector<QueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const unsigned char *text = sqlite3_column_text(stmt, 0);
+        const int weight = sqlite3_column_int(stmt, 1);
+        rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
+    }
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return rows;
+}
+
 std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, int limit)
 {
     const auto table = build_table_name_impl(segments);
@@ -234,6 +273,47 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
     const auto jp_sql =
         "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"jp\" = ? ORDER BY \"weight\" DESC LIMIT ?";
     return run_query(db, jp_sql, jp, limit);
+}
+
+std::vector<QueryItem> query_single_cut(sqlite3 *db,
+                                        std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                        const Segments &segments,
+                                        int limit)
+{
+    const auto table = build_table_name_impl(segments);
+    if (table.empty())
+    {
+        return {};
+    }
+
+    const auto key = join_segments(segments);
+    const auto jp = segments_to_jianpin_impl(segments);
+    const auto key_like_pattern = build_key_like_pattern(segments);
+
+    const auto exact_sql =
+        "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" = ? ORDER BY \"weight\" DESC LIMIT ?";
+    auto rows = run_query(db, statement_cache, exact_sql, key, limit);
+    if (!rows.empty())
+    {
+        return rows;
+    }
+
+    const auto prefix_sql =
+        "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" LIKE ? ORDER BY \"weight\" DESC LIMIT ?";
+    rows = run_query(db, statement_cache, prefix_sql, key_like_pattern, limit);
+    if (!rows.empty())
+    {
+        return rows;
+    }
+
+    if (!is_pure_jianpin(segments))
+    {
+        return {};
+    }
+
+    const auto jp_sql =
+        "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"jp\" = ? ORDER BY \"weight\" DESC LIMIT ?";
+    return run_query(db, statement_cache, jp_sql, jp, limit);
 }
 
 Segments cut_one_piece_greedy(const std::string &pinyin, bool intact_only)
@@ -431,6 +511,37 @@ std::vector<QueryItem> query_segments_flat(const Segments &segments, const std::
             {
                 items.push_back(item);
             }
+        }
+    }
+
+    std::sort(items.begin(), items.end(), [](const QueryItem &lhs, const QueryItem &rhs) {
+        return lhs.second > rhs.second;
+    });
+
+    if (static_cast<int>(items.size()) > limit)
+    {
+        items.resize(static_cast<size_t>(limit));
+    }
+    return items;
+}
+
+std::vector<QueryItem> query_segments_flat(const Segments &segments,
+                                           sqlite3 *db,
+                                           std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                           int limit)
+{
+    if (db == nullptr || segments.empty())
+    {
+        return {};
+    }
+
+    std::vector<QueryItem> items;
+    std::unordered_set<std::string> seen;
+    for (const auto &item : query_single_cut(db, statement_cache, segments, limit))
+    {
+        if (seen.insert(item.first).second)
+        {
+            items.push_back(item);
         }
     }
 
