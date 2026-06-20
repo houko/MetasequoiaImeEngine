@@ -17,6 +17,8 @@ struct QueryRequest
     SchemeType scheme = SchemeType::Quanpin;
     std::string raw_input;
     std::string normalized_input;
+    std::string raw_segmentation;
+    std::string normalized_segmentation;
     std::string segmentation;
     std::vector<KeyStroke> key_strokes;
     bool valid = false;

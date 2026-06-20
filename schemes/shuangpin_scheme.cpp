@@ -69,7 +69,9 @@ QueryRequest ShuangpinScheme::build_request() const
         return request;
     }
 
-    request.segmentation = shuangpin::to_quanpin_segmentation(shuangpin::segment_input(raw_input_));
+    request.raw_segmentation = shuangpin::segment_input(raw_input_);
+    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(request.raw_segmentation);
+    request.segmentation = request.normalized_segmentation;
     request.normalized_input = shuangpin::normalize_input(raw_input_);
     return request;
 }
