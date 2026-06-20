@@ -2,6 +2,7 @@
 
 #include "shuangpin_utils.h"
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
 
 namespace shuangpin
 {
@@ -19,6 +20,59 @@ std::string to_quanpin_segmentation(const std::string &segmented_input)
 std::string normalize_input(const std::string &raw_input)
 {
     return boost::replace_all_copy(to_quanpin_segmentation(segment_input(raw_input)), "'", "");
+}
+
+std::string apply_segmentation_cases(const std::string &segmented_input, const std::string &raw_input_with_cases)
+{
+    if (segmented_input.empty() || raw_input_with_cases.empty())
+    {
+        return {};
+    }
+
+    std::string extracted_input;
+    extracted_input.reserve(segmented_input.size());
+    for (const char ch : segmented_input)
+    {
+        if (ch != '\'')
+        {
+            extracted_input.push_back(ch);
+        }
+    }
+
+    if (extracted_input != boost::algorithm::to_lower_copy(raw_input_with_cases))
+    {
+        return segmented_input;
+    }
+
+    std::string result;
+    result.reserve(segmented_input.size());
+    size_t index = 0;
+    for (const char ch : segmented_input)
+    {
+        if (ch == '\'')
+        {
+            result.push_back(ch);
+            continue;
+        }
+
+        if (index >= raw_input_with_cases.size())
+        {
+            return segmented_input;
+        }
+
+        const char cased = raw_input_with_cases[index];
+        if (ch == cased || ch == cased + ('a' - 'A'))
+        {
+            result.push_back(cased);
+        }
+        else
+        {
+            result.push_back(ch);
+        }
+        ++index;
+    }
+
+    return result;
 }
 
 std::string get_first_han_char(const std::string &words)

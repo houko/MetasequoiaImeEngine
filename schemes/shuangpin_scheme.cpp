@@ -1,5 +1,6 @@
 #include "shuangpin_scheme.h"
 #include "../shuangpin/shuangpin_query.h"
+#include <cctype>
 
 namespace
 {
@@ -60,19 +61,25 @@ QueryRequest ShuangpinScheme::build_request() const
 {
     QueryRequest request;
     request.scheme = type();
-    request.raw_input = raw_input_;
+    request.raw_input_with_cases = raw_input_;
+    request.raw_input.reserve(raw_input_.size());
+    for (const char ch : raw_input_)
+    {
+        request.raw_input.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
     request.key_strokes = key_strokes_;
-    request.valid = !raw_input_.empty();
+    request.valid = !request.raw_input.empty();
 
     if (!request.valid)
     {
         return request;
     }
 
-    request.raw_segmentation = shuangpin::segment_input(raw_input_);
-    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(request.raw_segmentation);
+    const std::string raw_segmentation = shuangpin::segment_input(request.raw_input);
+    request.raw_segmentation = shuangpin::apply_segmentation_cases(raw_segmentation, request.raw_input_with_cases);
+    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(raw_segmentation);
     request.segmentation = request.normalized_segmentation;
-    request.normalized_input = shuangpin::normalize_input(raw_input_);
+    request.normalized_input = shuangpin::normalize_input(request.raw_input);
     return request;
 }
 
