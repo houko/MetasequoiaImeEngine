@@ -2,12 +2,37 @@
 // 测试拼音输入法的核心逻辑，包括双拼和全拼方案，以及动态切换输入方案的功能。
 //
 #include <Windows.h>
+#include <chrono>
+#include <stdexcept>
+#include <string>
 #include <fmt/core.h>
 #include "fmt/base.h"
-#include <chrono>
 #include "core/ime_session.h"
+#include "quanpin/quanpin_dictionary.h"
+#include "shuangpin/shuangpin_dictionary.h"
 
 using namespace std;
+
+namespace
+{
+
+void expect(bool condition, const std::string &message)
+{
+    if (!condition)
+    {
+        throw std::runtime_error(message);
+    }
+}
+
+void expect_session_state(const ImeSession &session, const std::string &expected_preedit)
+{
+    expect(session.get_preedit() == expected_preedit,
+           fmt::format("Expected preedit '{}', got '{}'", expected_preedit, session.get_preedit()));
+    expect(session.get_request().raw_input == expected_preedit,
+           fmt::format("Expected raw_input '{}', got '{}'", expected_preedit, session.get_request().raw_input));
+}
+
+} // namespace
 
 void print_candidates(const std::vector<WordItem> &result)
 {
@@ -81,11 +106,84 @@ void test_dynamic_switch()
     print_candidates(session.get_candidates());
 }
 
+void test_quanpin_session_backspace()
+{
+    ImeSession session(SchemeType::Quanpin);
+
+    fmt::println("==== Quanpin Backspace ====");
+    feed_sequence(session, {'C', 'E', 'S', 'H', 'I'}, {'c', 'e', 's', 'h', 'i'});
+    expect_session_state(session, "ceshi");
+    expect(!session.get_candidates().empty(), "Quanpin session should have candidates before backspace.");
+
+    session.handle_key(VK_BACK);
+    fmt::println("Preedit after backspace: {}", session.get_preedit());
+    expect_session_state(session, "cesh");
+    expect(session.get_request().valid, "Quanpin session request should stay valid after backspace.");
+}
+
+void test_shuangpin_session_backspace()
+{
+    ImeSession session(SchemeType::Shuangpin);
+
+    fmt::println("==== Shuangpin Backspace ====");
+    feed_sequence(session, {'C', 'E', 'L', 'I', 'U', 'I'}, {'c', 'e', 'l', 'i', 'u', 'i'});
+    expect_session_state(session, "celiui");
+    expect(!session.get_candidates().empty(), "Shuangpin session should have candidates before backspace.");
+
+    session.handle_key(VK_BACK);
+    fmt::println("Preedit after backspace: {}", session.get_preedit());
+    expect_session_state(session, "celiu");
+    expect(session.get_request().valid, "Shuangpin session request should stay valid after backspace.");
+}
+
+void test_quanpin_dictionary_backspace()
+{
+    QuanpinDictionary dictionary;
+
+    fmt::println("==== Quanpin Dictionary Backspace ====");
+    dictionary.handleVkCode('C', 0, 'c');
+    dictionary.handleVkCode('E', 0, 'e');
+    dictionary.handleVkCode('S', 0, 's');
+    expect(dictionary.get_pinyin_sequence() == "ces",
+           fmt::format("Expected quanpin dictionary sequence 'ces', got '{}'", dictionary.get_pinyin_sequence()));
+
+    dictionary.handleVkCode(VK_BACK, 0);
+    expect(dictionary.get_pinyin_sequence() == "ce",
+           fmt::format("Expected quanpin dictionary sequence 'ce' after backspace, got '{}'",
+                       dictionary.get_pinyin_sequence()));
+    expect(!dictionary.get_current_candidate_list().empty(),
+           "Quanpin dictionary should still have candidates after backspace.");
+}
+
+void test_shuangpin_dictionary_backspace()
+{
+    ShuangpinDictionary dictionary;
+
+    fmt::println("==== Shuangpin Dictionary Backspace ====");
+    dictionary.handleVkCode('C', 0, 'c');
+    dictionary.handleVkCode('E', 0, 'e');
+    dictionary.handleVkCode('L', 0, 'l');
+    expect(dictionary.get_pinyin_sequence() == "cel",
+           fmt::format("Expected shuangpin dictionary sequence 'cel', got '{}'", dictionary.get_pinyin_sequence()));
+
+    dictionary.handleVkCode(VK_BACK, 0);
+    expect(dictionary.get_pinyin_sequence() == "ce",
+           fmt::format("Expected shuangpin dictionary sequence 'ce' after backspace, got '{}'",
+                       dictionary.get_pinyin_sequence()));
+    expect(!dictionary.get_current_candidate_list().empty(),
+           "Shuangpin dictionary should still have candidates after backspace.");
+}
+
 int main(int argc, char *argv[])
 {
     test_shuangpin_session();
     test_shuangpin_session02();
     test_quanpin_session();
     test_dynamic_switch();
+    test_quanpin_session_backspace();
+    test_shuangpin_session_backspace();
+    test_quanpin_dictionary_backspace();
+    test_shuangpin_dictionary_backspace();
+    fmt::println("All tests passed.");
     return 0;
 }
