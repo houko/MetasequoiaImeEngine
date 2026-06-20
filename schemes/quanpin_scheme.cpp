@@ -31,7 +31,7 @@ void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
-    if (vk == VK_ESCAPE || vk == VK_RETURN || vk == VK_SPACE)
+    if (vk == VK_ESCAPE || vk == VK_RETURN)
     {
         reset();
         return;
@@ -85,7 +85,7 @@ QueryRequest QuanpinScheme::build_request() const
             const auto segments = quanpin::cut_pinyin_by_mode(raw_input_, "correction");
             if (!segments.empty())
             {
-                request.segmentation = quanpin::join_segments(segments.front());
+                request.normalized_segmentation = quanpin::join_segments(segments.front());
             }
         }
         catch (...)
@@ -93,10 +93,13 @@ QueryRequest QuanpinScheme::build_request() const
         }
     }
 
-    if (request.segmentation.empty())
+    if (request.normalized_segmentation.empty())
     {
-        request.segmentation = raw_input_;
+        request.normalized_segmentation = raw_input_;
     }
+
+    request.raw_segmentation = request.normalized_segmentation;
+    request.segmentation = request.normalized_segmentation;
 
     request.valid = !request.normalized_input.empty();
     return request;

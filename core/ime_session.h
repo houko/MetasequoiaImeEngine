@@ -13,7 +13,10 @@ class ImeSession
 
     void handle_key(UINT vk, UINT modifiers_down = 0, WCHAR wch = 0);
     void switch_scheme(SchemeType scheme_type);
+    void set_shuangpin_helpcode_enabled(bool enabled);
+    void replace_shuangpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
     void reset();
+    void reset_cache();
 
     SchemeType current_scheme_type() const;
     const std::string &get_preedit() const;
@@ -28,4 +31,5 @@ class ImeSession
     ProviderRegistry provider_registry_;
     std::unique_ptr<IInputScheme> scheme_;
     CompositionState state_;
+    bool enable_shuangpin_helpcode_ = false;
 };

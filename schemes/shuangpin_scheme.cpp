@@ -1,5 +1,6 @@
 #include "shuangpin_scheme.h"
 #include "../shuangpin/shuangpin_query.h"
+#include <cctype>
 
 namespace
 {
@@ -12,6 +13,12 @@ bool is_alpha_vk(UINT vk)
 void ShuangpinScheme::reset()
 {
     raw_input_.clear();
+    key_strokes_.clear();
+}
+
+void ShuangpinScheme::set_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    raw_input_ = raw_input_with_cases.empty() ? raw_input : raw_input_with_cases;
     key_strokes_.clear();
 }
 
@@ -30,7 +37,7 @@ void ShuangpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
-    if (vk == VK_ESCAPE || vk == VK_RETURN || vk == VK_SPACE)
+    if (vk == VK_ESCAPE || vk == VK_RETURN)
     {
         reset();
         return;
@@ -60,17 +67,25 @@ QueryRequest ShuangpinScheme::build_request() const
 {
     QueryRequest request;
     request.scheme = type();
-    request.raw_input = raw_input_;
+    request.raw_input_with_cases = raw_input_;
+    request.raw_input.reserve(raw_input_.size());
+    for (const char ch : raw_input_)
+    {
+        request.raw_input.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
     request.key_strokes = key_strokes_;
-    request.valid = !raw_input_.empty();
+    request.valid = !request.raw_input.empty();
 
     if (!request.valid)
     {
         return request;
     }
 
-    request.segmentation = shuangpin::to_quanpin_segmentation(shuangpin::segment_input(raw_input_));
-    request.normalized_input = shuangpin::normalize_input(raw_input_);
+    const std::string raw_segmentation = shuangpin::segment_input(request.raw_input);
+    request.raw_segmentation = shuangpin::apply_segmentation_cases(raw_segmentation, request.raw_input_with_cases);
+    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(raw_segmentation);
+    request.segmentation = request.normalized_segmentation;
+    request.normalized_input = shuangpin::normalize_input(request.raw_input);
     return request;
 }
 
