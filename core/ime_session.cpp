@@ -20,6 +20,11 @@ void ImeSession::switch_scheme(SchemeType scheme_type)
     state_ = CompositionState{};
 }
 
+void ImeSession::set_shuangpin_helpcode_enabled(bool enabled)
+{
+    enable_shuangpin_helpcode_ = enabled;
+}
+
 void ImeSession::reset()
 {
     scheme_->reset();
@@ -56,6 +61,7 @@ void ImeSession::refresh_candidates()
 {
     state_.preedit = scheme_->get_preedit();
     state_.request = scheme_->build_request();
+    state_.request.enable_shuangpin_helpcode = enable_shuangpin_helpcode_;
 
     if (!state_.request.valid)
     {
