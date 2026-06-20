@@ -31,7 +31,7 @@ void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
-    if (vk == VK_ESCAPE || vk == VK_RETURN || vk == VK_SPACE)
+    if (vk == VK_ESCAPE || vk == VK_RETURN)
     {
         reset();
         return;

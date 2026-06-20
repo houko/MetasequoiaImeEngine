@@ -25,6 +25,23 @@ void ImeSession::set_shuangpin_helpcode_enabled(bool enabled)
     enable_shuangpin_helpcode_ = enabled;
 }
 
+void ImeSession::replace_shuangpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    if (scheme_->type() != SchemeType::Shuangpin)
+    {
+        return;
+    }
+
+    auto *shuangpin_scheme = dynamic_cast<ShuangpinScheme *>(scheme_.get());
+    if (!shuangpin_scheme)
+    {
+        return;
+    }
+
+    shuangpin_scheme->set_raw_input(raw_input, raw_input_with_cases);
+    refresh_candidates();
+}
+
 void ImeSession::reset()
 {
     scheme_->reset();

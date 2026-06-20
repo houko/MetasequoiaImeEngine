@@ -16,6 +16,12 @@ void ShuangpinScheme::reset()
     key_strokes_.clear();
 }
 
+void ShuangpinScheme::set_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    raw_input_ = raw_input_with_cases.empty() ? raw_input : raw_input_with_cases;
+    key_strokes_.clear();
+}
+
 void ShuangpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
 {
     if (vk == VK_BACK)
@@ -31,7 +37,7 @@ void ShuangpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
-    if (vk == VK_ESCAPE || vk == VK_RETURN || vk == VK_SPACE)
+    if (vk == VK_ESCAPE || vk == VK_RETURN)
     {
         reset();
         return;
