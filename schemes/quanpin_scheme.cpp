@@ -19,6 +19,12 @@ void QuanpinScheme::reset()
     key_strokes_.clear();
 }
 
+void QuanpinScheme::set_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    raw_input_ = raw_input_with_cases.empty() ? raw_input : raw_input_with_cases;
+    key_strokes_.clear();
+}
+
 void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
 {
     if (vk == VK_BACK)

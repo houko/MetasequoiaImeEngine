@@ -42,6 +42,23 @@ void ImeSession::replace_shuangpin_raw_input(const std::string &raw_input, const
     refresh_candidates();
 }
 
+void ImeSession::replace_quanpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    if (scheme_->type() != SchemeType::Quanpin)
+    {
+        return;
+    }
+
+    auto *quanpin_scheme = dynamic_cast<QuanpinScheme *>(scheme_.get());
+    if (!quanpin_scheme)
+    {
+        return;
+    }
+
+    quanpin_scheme->set_raw_input(raw_input, raw_input_with_cases);
+    refresh_candidates();
+}
+
 void ImeSession::reset()
 {
     scheme_->reset();

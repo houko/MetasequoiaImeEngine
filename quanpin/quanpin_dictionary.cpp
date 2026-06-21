@@ -31,6 +31,17 @@ std::string remove_delimiters(const std::string &segmented)
     return normalized;
 }
 
+std::string escape_sql_text(std::string text)
+{
+    size_t pos = 0;
+    while ((pos = text.find('\'', pos)) != std::string::npos)
+    {
+        text.insert(pos, 1, '\'');
+        pos += 2;
+    }
+    return text;
+}
+
 } // namespace
 
 QuanpinDictionary::QuanpinDictionary()
@@ -253,6 +264,7 @@ std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &
 
 int QuanpinDictionary::create_word(std::string pinyin, std::string word)
 {
+    pinyin = remove_delimiters(pinyin);
     const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
     if (cuts.empty())
     {
@@ -497,7 +509,8 @@ std::string QuanpinDictionary::build_sql_for_checking_word(const std::string &ke
         return "";
     }
     const std::string table = quanpin::build_table_name(cuts.front());
-    return fmt::format("select 1 from {} where key = '{}' and value = '{}';", table, key, value);
+    return fmt::format("select 1 from {} where key = '{}' and value = '{}';", table, escape_sql_text(key),
+                       escape_sql_text(value));
 }
 
 std::string QuanpinDictionary::build_sql_for_inserting_word(const std::string &key, const std::string &jp,
@@ -509,8 +522,8 @@ std::string QuanpinDictionary::build_sql_for_inserting_word(const std::string &k
         return "";
     }
     const std::string table = quanpin::build_table_name(cuts.front());
-    return fmt::format("insert into {} (key, jp, value, weight) values ('{}', '{}', '{}', '{}');", table, key, jp,
-                       value, 10000);
+    return fmt::format("insert into {} (key, jp, value, weight) values ('{}', '{}', '{}', '{}');", table,
+                       escape_sql_text(key), escape_sql_text(jp), escape_sql_text(value), 10000);
 }
 
 std::string QuanpinDictionary::build_sql_for_updating_word(const std::string &word)
@@ -520,6 +533,7 @@ std::string QuanpinDictionary::build_sql_for_updating_word(const std::string &wo
 
 std::string QuanpinDictionary::build_sql_for_updating_word(std::string pinyin, const std::string &word)
 {
+    pinyin = remove_delimiters(pinyin);
     const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
     if (cuts.empty())
     {
@@ -543,11 +557,12 @@ std::string QuanpinDictionary::build_sql_for_updating_word(std::string pinyin, c
     const std::string table = quanpin::build_table_name(segments);
     return fmt::format("update {0} set weight = ( select MAX(weight) + 1 from {0} AS sub where sub.key = '{1}') "
                        "where key = '{1}' and value = '{2}';",
-                       table, pinyin, word);
+                       table, escape_sql_text(pinyin), escape_sql_text(word));
 }
 
 std::string QuanpinDictionary::build_sql_for_deleting_word(std::string pinyin, const std::string &word)
 {
+    pinyin = remove_delimiters(pinyin);
     const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
     if (cuts.empty())
     {
@@ -562,18 +577,28 @@ std::string QuanpinDictionary::build_sql_for_deleting_word(std::string pinyin, c
     }
 
     return fmt::format("delete from {} where key = '{}' and value = '{}';", quanpin::build_table_name(cuts.front()),
-                       normalized, word);
+                       escape_sql_text(normalized), escape_sql_text(word));
 }
 
 bool QuanpinDictionary::do_validate(const std::string &key, const std::string &jp, const std::string &value)
 {
-    if (key.empty())
+    const std::string pure_key = remove_delimiters(key);
+    if (pure_key.empty())
     {
         return false;
     }
-    if (jp.size() != HelpcodeUtils::count_han_chars(value))
+
+    const size_t han_count = HelpcodeUtils::count_han_chars(value);
+    if (jp.size() != han_count)
     {
         return false;
     }
-    return remove_delimiters(key).size() >= jp.size();
+
+    const auto cuts = quanpin::cut_pinyin_by_mode(pure_key, "correction");
+    if (cuts.empty())
+    {
+        return false;
+    }
+
+    return cuts.front().size() == han_count;
 }
