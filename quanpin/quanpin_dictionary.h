@@ -47,6 +47,12 @@ class QuanpinDictionary
     }
 
   private:
+    std::vector<WordItem> query_series(const std::string &raw_input,
+                                       const std::string &segmentation,
+                                       const quanpin::Segments &segments);
+    std::vector<WordItem> query_single_path(const std::string &raw_input,
+                                            const std::string &segmentation,
+                                            const quanpin::Segments &segments);
     quanpin::Segments resolve_segments(const std::string &raw_input, const std::string &segmentation);
     quanpin::Segments get_or_compute_segments(const std::string &raw_input);
     std::vector<WordItem> query_database(const quanpin::Segments &segments, const std::string &segmentation);
@@ -70,6 +76,7 @@ class QuanpinDictionary
 
   private:
     CircularBuffer<std::string, std::vector<WordItem>> cache_;
+    CircularBuffer<std::string, std::vector<WordItem>> series_cache_;
     CircularBuffer<std::string, quanpin::Segments> segmentation_cache_;
     sqlite3 *db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt *> statement_cache_;

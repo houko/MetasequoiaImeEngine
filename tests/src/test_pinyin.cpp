@@ -203,6 +203,14 @@ void test_quanpin_query_timings()
     run_quanpin_query_case(dictionary, "shenmeshui");
     run_quanpin_query_case(dictionary, "shenmesh");
     run_quanpin_query_case(dictionary, "shenmes");
+    run_quanpin_query_case(dictionary, "n");
+    run_quanpin_query_case(dictionary, "ni");
+    run_quanpin_query_case(dictionary, "nis");
+    run_quanpin_query_case(dictionary, "nish");
+    run_quanpin_query_case(dictionary, "nishu");
+    run_quanpin_query_case(dictionary, "nishuo");
+    run_quanpin_query_case(dictionary, "nishuon");
+    run_quanpin_query_case(dictionary, "nishuone");
 }
 
 int main(int argc, char *argv[])
