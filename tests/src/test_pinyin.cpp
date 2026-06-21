@@ -42,6 +42,18 @@ void print_candidates(const std::vector<WordItem> &result)
     }
 }
 
+void run_quanpin_query_case(QuanpinDictionary &dictionary, const std::string &query)
+{
+    const auto start = std::chrono::high_resolution_clock::now();
+    const auto result = dictionary.query(query);
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    fmt::println("Query: {}", query);
+    fmt::println("Time: {} us", duration.count());
+    print_candidates(result);
+}
+
 void feed_sequence(ImeSession &session, const vector<UINT> &sequence, const vector<WCHAR> &wch_sequence = {})
 {
     for (int i = 0; i < sequence.size(); ++i)
@@ -174,6 +186,25 @@ void test_shuangpin_dictionary_backspace()
            "Shuangpin dictionary should still have candidates after backspace.");
 }
 
+void test_quanpin_query_timings()
+{
+    QuanpinDictionary dictionary;
+
+    fmt::println("==== Quanpin Query Timings ====");
+    run_quanpin_query_case(dictionary, "nih");
+    run_quanpin_query_case(dictionary, "niha");
+    run_quanpin_query_case(dictionary, "nihao");
+    run_quanpin_query_case(dictionary, "ni");
+    run_quanpin_query_case(dictionary, "n");
+    run_quanpin_query_case(dictionary, "shen");
+    run_quanpin_query_case(dictionary, "shenme");
+    run_quanpin_query_case(dictionary, "shenmeshi");
+    run_quanpin_query_case(dictionary, "shenmeshi");
+    run_quanpin_query_case(dictionary, "shenmeshui");
+    run_quanpin_query_case(dictionary, "shenmesh");
+    run_quanpin_query_case(dictionary, "shenmes");
+}
+
 int main(int argc, char *argv[])
 {
     test_shuangpin_session();
@@ -184,6 +215,7 @@ int main(int argc, char *argv[])
     test_shuangpin_session_backspace();
     test_quanpin_dictionary_backspace();
     test_shuangpin_dictionary_backspace();
+    test_quanpin_query_timings();
     fmt::println("All tests passed.");
     return 0;
 }
