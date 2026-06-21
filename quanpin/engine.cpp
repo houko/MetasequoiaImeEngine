@@ -17,9 +17,9 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
         request.raw_input.size() >= 2)
     {
         const std::string base_raw_input = request.raw_input.substr(0, request.raw_input.size() - 2);
-        const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
-        if (!cuts.empty())
+        if (quanpin::is_complete_pinyin_input(base_raw_input))
         {
+            const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
             const std::string base_segmentation = quanpin::join_segments(cuts.front());
             const std::string help_codes = request.raw_input.substr(request.raw_input.size() - 2, 2);
             const auto base_candidates = dictionary_.query(base_raw_input, base_segmentation);
@@ -31,9 +31,9 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
         !request.raw_input.empty())
     {
         const std::string base_raw_input = request.raw_input.substr(0, request.raw_input.size() - 1);
-        const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
-        if (!cuts.empty())
+        if (quanpin::is_complete_pinyin_input(base_raw_input))
         {
+            const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
             const std::string base_segmentation = quanpin::join_segments(cuts.front());
             const std::string help_code = request.raw_input.substr(request.raw_input.size() - 1, 1);
             const auto base_candidates = dictionary_.query(base_raw_input, base_segmentation);

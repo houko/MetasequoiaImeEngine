@@ -439,6 +439,16 @@ Segments cut_one_piece_greedy(const std::string &pinyin, bool intact_only)
     return result;
 }
 
+bool is_complete_pinyin_part(const std::string &part)
+{
+    if (part.empty())
+    {
+        return false;
+    }
+
+    return !cut_one_piece_greedy(part, true).empty();
+}
+
 } // namespace
 
 Segments cut_pinyin_greedy(const std::string &pinyin, bool intact_only)
@@ -495,6 +505,29 @@ std::vector<Segments> cut_pinyin_by_mode(const std::string &pinyin, const std::s
     }
 
     return {};
+}
+
+bool is_complete_pinyin_input(const std::string &pinyin)
+{
+    if (pinyin.empty())
+    {
+        return false;
+    }
+
+    if (pinyin.find('\'') == std::string::npos)
+    {
+        return is_complete_pinyin_part(pinyin);
+    }
+
+    for (const auto &part : split(pinyin, '\''))
+    {
+        if (!is_complete_pinyin_part(part))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 Segments split_segments(const std::string &segmentation)

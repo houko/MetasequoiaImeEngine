@@ -81,11 +81,13 @@ QueryRequest QuanpinScheme::build_request() const
 
     std::string normalized_source = request.raw_input;
     size_t helpcode_length = 0;
-    if (HelpcodeUtils::is_quanpin_double_help_mode(request.raw_input_with_cases) && normalized_source.size() >= 2)
+    if (HelpcodeUtils::is_quanpin_double_help_mode(request.raw_input_with_cases) && normalized_source.size() >= 2 &&
+        quanpin::is_complete_pinyin_input(normalized_source.substr(0, normalized_source.size() - 2)))
     {
         helpcode_length = 2;
     }
-    else if (HelpcodeUtils::is_quanpin_single_help_mode(request.raw_input_with_cases) && !normalized_source.empty())
+    else if (HelpcodeUtils::is_quanpin_single_help_mode(request.raw_input_with_cases) && !normalized_source.empty() &&
+             quanpin::is_complete_pinyin_input(normalized_source.substr(0, normalized_source.size() - 1)))
     {
         helpcode_length = 1;
     }
@@ -123,7 +125,13 @@ QueryRequest QuanpinScheme::build_request() const
         request.normalized_segmentation = normalized_source;
     }
 
-    request.raw_segmentation = shuangpin::apply_segmentation_cases(request.normalized_segmentation, normalized_source);
+    std::string cased_source = request.raw_input_with_cases;
+    if (helpcode_length > 0 && cased_source.size() >= helpcode_length)
+    {
+        cased_source = cased_source.substr(0, cased_source.size() - helpcode_length);
+    }
+
+    request.raw_segmentation = shuangpin::apply_segmentation_cases(request.normalized_segmentation, cased_source);
     if (helpcode_length > 0)
     {
         request.raw_segmentation += "'";
