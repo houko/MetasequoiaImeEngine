@@ -148,6 +148,18 @@ bool is_pure_jianpin(const Segments &segments)
                        [](const std::string &segment) { return segment.size() == 1; });
 }
 
+bool can_match_exact_key(const Segments &segments)
+{
+    if (segments.empty())
+    {
+        return false;
+    }
+
+    const auto &valid_pinyin = intact_pinyin_set();
+    return std::all_of(segments.begin(), segments.end(),
+                       [&](const std::string &segment) { return valid_pinyin.find(segment) != valid_pinyin.end(); });
+}
+
 class SqliteDb
 {
   public:
@@ -325,10 +337,14 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
 
     const auto exact_sql =
         "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" = ? ORDER BY \"weight\" DESC LIMIT ?";
-    auto rows = run_query(db, exact_sql, key, limit);
-    if (!rows.empty())
+    std::vector<QueryItem> rows;
+    if (can_match_exact_key(segments))
     {
-        return rows;
+        rows = run_query(db, exact_sql, key, limit);
+        if (!rows.empty())
+        {
+            return rows;
+        }
     }
 
     const auto prefix_sql = "SELECT \"value\", \"weight\" FROM \"" + table +
@@ -368,10 +384,14 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db,
 
     const auto exact_sql =
         "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" = ? ORDER BY \"weight\" DESC LIMIT ?";
-    auto rows = run_query(db, statement_cache, exact_sql, key, limit);
-    if (!rows.empty())
+    std::vector<QueryItem> rows;
+    if (can_match_exact_key(segments))
     {
-        return rows;
+        rows = run_query(db, statement_cache, exact_sql, key, limit);
+        if (!rows.empty())
+        {
+            return rows;
+        }
     }
 
     const auto prefix_sql = "SELECT \"value\", \"weight\" FROM \"" + table +
