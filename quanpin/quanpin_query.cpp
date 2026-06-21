@@ -536,6 +536,21 @@ std::string get_default_db_path()
     return shuangpin::get_local_appdata_path() + "\\" + shuangpin::get_app_name() + "\\quanpin_multi_tbl_has_jp.db";
 }
 
+void warm_up(sqlite3 *db, std::unordered_map<std::string, sqlite3_stmt *> &statement_cache)
+{
+    (void)intact_pinyin_set();
+    (void)prefix_pinyin_set();
+
+    if (db == nullptr)
+    {
+        return;
+    }
+
+    // Warm the most common single-syllable prefixes to hide first-query setup costs.
+    (void)query_single_cut(db, statement_cache, Segments{"n"}, 1);
+    (void)query_single_cut(db, statement_cache, Segments{"ni"}, 1);
+}
+
 QueryResult query_words(const std::string &pinyin, const std::string &db_path, const std::string &mode, int limit)
 {
     const auto cuts = cut_pinyin_by_mode(pinyin, mode);

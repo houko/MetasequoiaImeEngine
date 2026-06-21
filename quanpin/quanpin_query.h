@@ -35,6 +35,7 @@ std::string join_segments(const Segments &segments, const std::string &delimiter
 std::string build_table_name(const Segments &segments);
 std::string segments_to_jianpin(const Segments &segments);
 std::string get_default_db_path();
+void warm_up(sqlite3 *db, std::unordered_map<std::string, sqlite3_stmt *> &statement_cache);
 QueryResult query_words(const std::string &pinyin, const std::string &db_path, const std::string &mode = "greedy",
                         int limit = 8);
 QueryResult query_segments(const Segments &segments, const std::string &db_path, int limit = 8);

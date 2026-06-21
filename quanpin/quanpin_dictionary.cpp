@@ -49,6 +49,8 @@ QuanpinDictionary::QuanpinDictionary() : cache_(128), segmentation_cache_(128), 
     {
         spdlog::warn("QuanpinDictionary failed to open sqlite db: {}", db_path_);
     }
+
+    quanpin::warm_up(db_, statement_cache_);
 }
 
 QuanpinDictionary::~QuanpinDictionary()
