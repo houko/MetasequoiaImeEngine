@@ -1,6 +1,7 @@
 #include "quanpin_scheme.h"
 #include "../common/helpcode_utils.h"
 #include "../quanpin/quanpin_query.h"
+#include "../quanpin/quanpin_utils.h"
 #include "../shuangpin/shuangpin_query.h"
 #include <cctype>
 
@@ -79,23 +80,8 @@ QueryRequest QuanpinScheme::build_request() const
     }
     request.key_strokes = key_strokes_;
 
-    std::string normalized_source = request.raw_input;
-    size_t helpcode_length = 0;
-    if (HelpcodeUtils::is_quanpin_double_help_mode(request.raw_input_with_cases) && normalized_source.size() >= 2 &&
-        quanpin::is_complete_pinyin_input(normalized_source.substr(0, normalized_source.size() - 2)))
-    {
-        helpcode_length = 2;
-    }
-    else if (HelpcodeUtils::is_quanpin_single_help_mode(request.raw_input_with_cases) && !normalized_source.empty() &&
-             quanpin::is_complete_pinyin_input(normalized_source.substr(0, normalized_source.size() - 1)))
-    {
-        helpcode_length = 1;
-    }
-
-    if (helpcode_length > 0 && normalized_source.size() >= helpcode_length)
-    {
-        normalized_source = normalized_source.substr(0, normalized_source.size() - helpcode_length);
-    }
+    const size_t helpcode_length = quanpin::detect_active_helpcode_length(request.raw_input, request.raw_input_with_cases);
+    std::string normalized_source = quanpin::strip_active_helpcodes(request.raw_input, request.raw_input_with_cases);
 
     request.normalized_input.reserve(normalized_source.size());
     for (const char ch : normalized_source)
