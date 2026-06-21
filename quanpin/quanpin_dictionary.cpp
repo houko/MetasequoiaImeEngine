@@ -75,15 +75,9 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
     }
 
     pinyin_sequence_ = raw_input;
-    if (!segmentation.empty())
-    {
-        pinyin_segmentation_ = segmentation;
-    }
-    else
-    {
-        const quanpin::Segments segments = get_or_compute_segments(raw_input);
-        pinyin_segmentation_ = segments.empty() ? raw_input : quanpin::join_segments(segments);
-    }
+    const auto segments = resolve_segments(raw_input, segmentation);
+    pinyin_segmentation_ = segmentation.empty() ? (segments.empty() ? raw_input : quanpin::join_segments(segments))
+                                                : segmentation;
 
     const std::string cache_key = remove_delimiters(pinyin_segmentation_);
     if (auto cached = cache_.get(cache_key))
@@ -92,12 +86,21 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
         return current_candidate_list_;
     }
 
-    const auto segments = get_or_compute_segments(raw_input);
     std::vector<WordItem> result = query_database(segments, pinyin_segmentation_);
     result = append_ime_fallback(raw_input, pinyin_segmentation_, std::move(result));
     cache_.insert(cache_key, result);
     current_candidate_list_ = result;
     return current_candidate_list_;
+}
+
+quanpin::Segments QuanpinDictionary::resolve_segments(const std::string &raw_input, const std::string &segmentation)
+{
+    if (!segmentation.empty())
+    {
+        return quanpin::split_segments(segmentation);
+    }
+
+    return get_or_compute_segments(raw_input);
 }
 
 quanpin::Segments QuanpinDictionary::get_or_compute_segments(const std::string &raw_input)

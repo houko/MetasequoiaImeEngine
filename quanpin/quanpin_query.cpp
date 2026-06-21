@@ -137,6 +137,11 @@ std::string build_key_like_pattern(const Segments &segments)
     return join_segments(parts);
 }
 
+std::string build_key_prefix_upper_bound(const std::string &prefix)
+{
+    return prefix + "{";
+}
+
 bool is_pure_jianpin(const Segments &segments)
 {
     return std::all_of(segments.begin(), segments.end(),
@@ -237,6 +242,73 @@ std::vector<QueryItem> run_query(sqlite3 *db,
     return rows;
 }
 
+std::vector<QueryItem> run_query(sqlite3 *db,
+                                 const std::string &sql,
+                                 const std::string &lower_bound,
+                                 const std::string &upper_bound,
+                                 int limit)
+{
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        return {};
+    }
+
+    sqlite3_bind_text(stmt, 1, lower_bound.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, upper_bound.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, limit);
+
+    std::vector<QueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const unsigned char *text = sqlite3_column_text(stmt, 0);
+        const int weight = sqlite3_column_int(stmt, 1);
+        rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
+    }
+    sqlite3_finalize(stmt);
+    return rows;
+}
+
+std::vector<QueryItem> run_query(sqlite3 *db,
+                                 std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                 const std::string &sql,
+                                 const std::string &lower_bound,
+                                 const std::string &upper_bound,
+                                 int limit)
+{
+    sqlite3_stmt *stmt = nullptr;
+    const auto found = statement_cache.find(sql);
+    if (found != statement_cache.end())
+    {
+        stmt = found->second;
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    else
+    {
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            return {};
+        }
+        statement_cache.emplace(sql, stmt);
+    }
+
+    sqlite3_bind_text(stmt, 1, lower_bound.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, upper_bound.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, limit);
+
+    std::vector<QueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const unsigned char *text = sqlite3_column_text(stmt, 0);
+        const int weight = sqlite3_column_int(stmt, 1);
+        rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
+    }
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return rows;
+}
+
 std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, int limit)
 {
     const auto table = build_table_name_impl(segments);
@@ -247,7 +319,9 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
 
     const auto key = join_segments(segments);
     const auto jp = segments_to_jianpin_impl(segments);
-    const auto key_like_pattern = build_key_like_pattern(segments);
+    const auto key_prefix_pattern = build_key_like_pattern(segments);
+    const auto key_prefix = key_prefix_pattern.substr(0, key_prefix_pattern.size() - 1);
+    const auto key_prefix_upper_bound = build_key_prefix_upper_bound(key_prefix);
 
     const auto exact_sql =
         "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" = ? ORDER BY \"weight\" DESC LIMIT ?";
@@ -257,9 +331,9 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
         return rows;
     }
 
-    const auto prefix_sql =
-        "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" LIKE ? ORDER BY \"weight\" DESC LIMIT ?";
-    rows = run_query(db, prefix_sql, key_like_pattern, limit);
+    const auto prefix_sql = "SELECT \"value\", \"weight\" FROM \"" + table +
+                            "\" WHERE \"key\" >= ? AND \"key\" < ? ORDER BY \"weight\" DESC LIMIT ?";
+    rows = run_query(db, prefix_sql, key_prefix, key_prefix_upper_bound, limit);
     if (!rows.empty())
     {
         return rows;
@@ -288,7 +362,9 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db,
 
     const auto key = join_segments(segments);
     const auto jp = segments_to_jianpin_impl(segments);
-    const auto key_like_pattern = build_key_like_pattern(segments);
+    const auto key_prefix_pattern = build_key_like_pattern(segments);
+    const auto key_prefix = key_prefix_pattern.substr(0, key_prefix_pattern.size() - 1);
+    const auto key_prefix_upper_bound = build_key_prefix_upper_bound(key_prefix);
 
     const auto exact_sql =
         "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" = ? ORDER BY \"weight\" DESC LIMIT ?";
@@ -298,9 +374,9 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db,
         return rows;
     }
 
-    const auto prefix_sql =
-        "SELECT \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" LIKE ? ORDER BY \"weight\" DESC LIMIT ?";
-    rows = run_query(db, statement_cache, prefix_sql, key_like_pattern, limit);
+    const auto prefix_sql = "SELECT \"value\", \"weight\" FROM \"" + table +
+                            "\" WHERE \"key\" >= ? AND \"key\" < ? ORDER BY \"weight\" DESC LIMIT ?";
+    rows = run_query(db, statement_cache, prefix_sql, key_prefix, key_prefix_upper_bound, limit);
     if (!rows.empty())
     {
         return rows;
@@ -399,6 +475,16 @@ std::vector<Segments> cut_pinyin_by_mode(const std::string &pinyin, const std::s
     }
 
     return {};
+}
+
+Segments split_segments(const std::string &segmentation)
+{
+    if (segmentation.empty())
+    {
+        return {};
+    }
+
+    return split(segmentation, '\'');
 }
 
 std::string join_segments(const Segments &segments, const std::string &delimiter)

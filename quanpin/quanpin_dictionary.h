@@ -47,6 +47,7 @@ class QuanpinDictionary
     }
 
   private:
+    quanpin::Segments resolve_segments(const std::string &raw_input, const std::string &segmentation);
     quanpin::Segments get_or_compute_segments(const std::string &raw_input);
     std::vector<WordItem> query_database(const quanpin::Segments &segments, const std::string &segmentation);
     std::vector<WordItem> append_ime_fallback(const std::string &raw_input, const std::string &segmentation,
