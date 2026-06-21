@@ -10,7 +10,6 @@ using namespace std;
 const string ShuangpinUtil::app_name = "MetasequoiaImeTsf";
 static string path_seperator = "\\";
 static string pinyin_file_name = "pinyin.txt";
-static string helpcode_file_name = "helpcode.txt";
 
 /**
  * @brief Get the local app data path from environment variable LOCALAPPDATA
@@ -166,34 +165,6 @@ unordered_set<string> &initialize_quanpin_set()
 
 unordered_set<string> &ShuangpinUtil::quanpin_set = initialize_quanpin_set();
 
-unordered_map<string, string> &initialize_helpcode_keymap()
-{
-    static unordered_map<string, string> tmp_map;
-    ifstream helpcode_path(ShuangpinUtil::get_local_appdata_path() //
-                           + path_seperator                     //
-                           + ShuangpinUtil::app_name            //
-                           + path_seperator                     //
-                           + helpcode_file_name                 //
-    );
-    if (!helpcode_path.is_open())
-    {
-        spdlog::error("Failed to open pinyin.txt file. Please make sure file exists.");
-    }
-    string line;
-    while (getline(helpcode_path, line))
-    {
-        size_t pos = line.find('=');
-        tmp_map[line.substr(0, pos)] = line.substr(pos + 1, 2);
-    }
-    return tmp_map;
-}
-unordered_map<string, string> &ShuangpinUtil::helpcode_keymap = initialize_helpcode_keymap();
-
-/*
-
-
-*/
-
 /**
  * @brief Convert Xiaohe shuangpin to Quanpin
  *
@@ -298,20 +269,6 @@ string ShuangpinUtil::pinyin_segmentation(string sp_str)
  * @param words
  * @return std::string
  */
-std::string ShuangpinUtil::get_first_han_char(const std::string &words)
-{
-    auto it = words.begin();
-    auto end = words.end();
-
-    if (it == end)
-        return "";
-
-    auto next = it;
-    utf8::next(next, end);
-
-    return std::string(it, next);
-}
-
 /**
  * @brief Get first UTF-8 char size
  *
@@ -321,7 +278,6 @@ std::string ShuangpinUtil::get_first_han_char(const std::string &words)
 string::size_type ShuangpinUtil::get_first_char_size(string words)
 {
     size_t cplen = 1;
-    // https://en.wikipedia.org/wiki/UTF-8#Description
     if ((words[0] & 0xf8) == 0xf0)
         cplen = 4;
     else if ((words[0] & 0xf0) == 0xe0)
@@ -334,64 +290,6 @@ string::size_type ShuangpinUtil::get_first_char_size(string words)
 }
 
 /**
- * @brief Get the last han char
- *
- * @param words
- * @return std::string
- */
-std::string ShuangpinUtil::get_last_han_char(const std::string &words)
-{
-    auto it = words.begin();
-    auto end = words.end();
-
-    if (it == end)
-        return "";
-
-    auto rit = words.end();
-    auto prev = rit;
-    utf8::prior(prev, it);
-
-    return std::string(prev, rit);
-}
-
-/**
- * @brief Count last UTF-8 char size
- *
- * @param words UTF-8 string
- * @return string::size_type Char size
- */
-string::size_type ShuangpinUtil::get_last_char_size(string words)
-{
-    size_t prev_index = 0, index = 0, cnt = 0;
-    while (index < words.size())
-    {
-        size_t cplen = get_first_char_size(words.substr(index, words.size() - index));
-        prev_index = index;
-        index += cplen;
-        cnt += 1;
-    }
-    return words.size() - prev_index;
-}
-
-/**
- * @brief Count hanzi chars
- *
- * @param words UTF-8 string
- * @return string::size_type Count of hanzi
- */
-string::size_type ShuangpinUtil::cnt_han_chars(string words)
-{
-    size_t index = 0, cnt = 0;
-    while (index < words.size())
-    {
-        size_t cplen = get_first_char_size(words.substr(index, words.size() - index));
-        index += cplen;
-        cnt += 1;
-    }
-    return cnt;
-}
-
-/**
  * @brief Count UTF-8 chars
  *
  * @param str
@@ -400,57 +298,6 @@ string::size_type ShuangpinUtil::cnt_han_chars(string words)
 string::size_type ShuangpinUtil::count_utf8_chars(const string &str)
 {
     return utf8::distance(str.begin(), str.end());
-}
-
-/**
- * @brief Compute helpcodes
- *
- * - Single Hanzi: (helpcode)
- * - Multi Hanzi: (first hanzi's first helpcode + last hanzi's first helpcode)
- *
- * @param words UTF-8 string
- * @return string Helpcodes surrounded by ()
- */
-string ShuangpinUtil::compute_helpcodes(string words)
-{
-    string helpcodes("");
-    if (cnt_han_chars(words) == 1)
-    {
-        if (helpcode_keymap.count(words))
-        {
-            helpcodes += helpcode_keymap[words];
-            helpcodes[1] = toupper(helpcodes[1]);
-        }
-    }
-    else
-    {
-        // First
-        string firstHan = get_first_han_char(words);
-        if (helpcode_keymap.count(firstHan))
-        {
-            helpcodes += helpcode_keymap[firstHan].substr(0, 1);
-        }
-        else
-        {
-            return "";
-        }
-        // Second
-        string lastHan = get_last_han_char(words);
-        if (helpcode_keymap.count(lastHan))
-        {
-            helpcodes += helpcode_keymap[lastHan].substr(0, 1);
-            helpcodes[1] = toupper(helpcodes[1]);
-        }
-        else
-        {
-            return "";
-        }
-    }
-    if (helpcodes.size() > 0)
-    {
-        helpcodes = "(" + helpcodes + ")";
-    }
-    return helpcodes;
 }
 
 /**

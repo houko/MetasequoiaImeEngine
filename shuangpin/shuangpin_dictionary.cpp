@@ -1,4 +1,5 @@
 #include "shuangpin_dictionary.h"
+#include "../common/helpcode_utils.h"
 #include "../common/string_utils.h"
 #include "shuangpin_utils.h"
 #include <mutex>
@@ -246,9 +247,9 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
         if (count == 1)
         { /* 单字 */
             /* 第一个辅助码匹配上了 */
-            if (ShuangpinUtil::helpcode_keymap.count(cur_word))
+            if (HelpcodeUtils::helpcode_keymap().count(cur_word))
             {
-                if (ShuangpinUtil::helpcode_keymap[cur_word][0] == help_code[0])
+                if (HelpcodeUtils::helpcode_keymap().at(cur_word)[0] == help_code[0])
                 {
                     first_helpcode_matched_list.push_back(cand);
                     is_first_helpcode_matched = true;
@@ -257,9 +258,9 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
             /* 看看第二个辅助码是否匹配 */
             if (!is_first_helpcode_matched)
             {
-                if (ShuangpinUtil::helpcode_keymap.count(cur_word))
+                if (HelpcodeUtils::helpcode_keymap().count(cur_word))
                 {
-                    if (ShuangpinUtil::helpcode_keymap[cur_word][1] == help_code[0])
+                    if (HelpcodeUtils::helpcode_keymap().at(cur_word)[1] == help_code[0])
                     {
                         last_helpcode_matched_list.push_back(cand);
                         is_last_helpcode_matched = true;
@@ -270,10 +271,10 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
         else
         { /* 多字 */
             /* 第一个字的第一个辅助码匹配上了 */
-            string firstHanChar = ShuangpinUtil::get_first_han_char(cur_word);
-            if (ShuangpinUtil::helpcode_keymap.count(firstHanChar))
+            string firstHanChar = HelpcodeUtils::get_first_han_char(cur_word);
+            if (HelpcodeUtils::helpcode_keymap().count(firstHanChar))
             {
-                if (ShuangpinUtil::helpcode_keymap[firstHanChar][0] == help_code[0])
+                if (HelpcodeUtils::helpcode_keymap().at(firstHanChar)[0] == help_code[0])
                 {
                     first_helpcode_matched_list.push_back(cand);
                     is_first_helpcode_matched = true;
@@ -282,10 +283,10 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
             /* 最后一个字的第一个辅助码匹配上了 */
             if (!is_first_helpcode_matched)
             {
-                string lastHanChar = ShuangpinUtil::get_last_han_char(cur_word);
-                if (ShuangpinUtil::helpcode_keymap.count(lastHanChar))
+                string lastHanChar = HelpcodeUtils::get_last_han_char(cur_word);
+                if (HelpcodeUtils::helpcode_keymap().count(lastHanChar))
                 {
-                    if (ShuangpinUtil::helpcode_keymap[lastHanChar][0] == help_code[0])
+                    if (HelpcodeUtils::helpcode_keymap().at(lastHanChar)[0] == help_code[0])
                     {
                         last_helpcode_matched_list.push_back(cand);
                         is_last_helpcode_matched = true;
@@ -340,10 +341,10 @@ void ShuangpinDictionary::filter_with_double_helpcodes(               //
         int count = ShuangpinUtil::count_utf8_chars(cur_word);
         if (count == 1)
         { /* 单字 */
-            if (ShuangpinUtil::helpcode_keymap.count(cur_word))
+            if (HelpcodeUtils::helpcode_keymap().count(cur_word))
             {
-                if (ShuangpinUtil::helpcode_keymap[cur_word][0] == help_codes[0] &&
-                    ShuangpinUtil::helpcode_keymap[cur_word][1] == help_codes[1])
+                if (HelpcodeUtils::helpcode_keymap().at(cur_word)[0] == help_codes[0] &&
+                    HelpcodeUtils::helpcode_keymap().at(cur_word)[1] == help_codes[1])
                 {
                     result_list.push_back(cand);
                 }
@@ -351,12 +352,12 @@ void ShuangpinDictionary::filter_with_double_helpcodes(               //
         }
         else
         { /* 多字 */
-            string firstHanChar = ShuangpinUtil::get_first_han_char(cur_word);
-            string lastHanChar = ShuangpinUtil::get_last_han_char(cur_word);
-            if (ShuangpinUtil::helpcode_keymap.count(firstHanChar) && ShuangpinUtil::helpcode_keymap.count(lastHanChar))
+            string firstHanChar = HelpcodeUtils::get_first_han_char(cur_word);
+            string lastHanChar = HelpcodeUtils::get_last_han_char(cur_word);
+            if (HelpcodeUtils::helpcode_keymap().count(firstHanChar) && HelpcodeUtils::helpcode_keymap().count(lastHanChar))
             {
-                if (ShuangpinUtil::helpcode_keymap[firstHanChar][0] == help_codes[0] &&
-                    ShuangpinUtil::helpcode_keymap[lastHanChar][0] == help_codes[1])
+                if (HelpcodeUtils::helpcode_keymap().at(firstHanChar)[0] == help_codes[0] &&
+                    HelpcodeUtils::helpcode_keymap().at(lastHanChar)[0] == help_codes[1])
                 {
                     result_list.push_back(cand);
                 }
@@ -668,7 +669,7 @@ int ShuangpinDictionary::create_word(string pinyin, string word)
 
 string ShuangpinDictionary::build_sql_for_updating_word(string word)
 {
-    int han_cnt = ShuangpinUtil::cnt_han_chars(word);
+    int han_cnt = HelpcodeUtils::count_han_chars(word);
     string pinyin = _pinyin_sequence.substr(0, han_cnt * 2);
     string jp;
     for (size_t i = 0; i < pinyin.size(); i += 2)
@@ -684,7 +685,7 @@ string ShuangpinDictionary::build_sql_for_updating_word(string word)
 
 string ShuangpinDictionary::build_sql_for_updating_word(string pinyin, string word)
 {
-    int han_cnt = ShuangpinUtil::cnt_han_chars(word);
+    int han_cnt = HelpcodeUtils::count_han_chars(word);
     pinyin = pinyin.substr(0, han_cnt * 2);
     string jp;
     for (size_t i = 0; i < pinyin.size(); i += 2)
@@ -980,7 +981,7 @@ string ShuangpinDictionary::choose_tbl(const string &sp_str, size_t word_len)
 
 bool ShuangpinDictionary::do_validate(string key, string jp, string value)
 {
-    if (key.size() % 2 || jp.size() != key.size() / 2 || key.size() != ShuangpinUtil::cnt_han_chars(value) * 2)
+    if (key.size() % 2 || jp.size() != key.size() / 2 || key.size() != HelpcodeUtils::count_han_chars(value) * 2)
         return false;
     return true;
 }

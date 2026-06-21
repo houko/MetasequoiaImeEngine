@@ -1,5 +1,6 @@
 #include "shuangpin_query.h"
 
+#include "../common/helpcode_utils.h"
 #include "shuangpin_utils.h"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -77,12 +78,12 @@ std::string apply_segmentation_cases(const std::string &segmented_input, const s
 
 std::string get_first_han_char(const std::string &words)
 {
-    return ShuangpinUtil::get_first_han_char(words);
+    return HelpcodeUtils::get_first_han_char(words);
 }
 
 std::string get_last_han_char(const std::string &words)
 {
-    return ShuangpinUtil::get_last_han_char(words);
+    return HelpcodeUtils::get_last_han_char(words);
 }
 
 std::string::size_type count_utf8_chars(const std::string &text)
@@ -92,7 +93,7 @@ std::string::size_type count_utf8_chars(const std::string &text)
 
 std::string::size_type count_han_chars(const std::string &text)
 {
-    return ShuangpinUtil::cnt_han_chars(text);
+    return HelpcodeUtils::count_han_chars(text);
 }
 
 } // namespace shuangpin

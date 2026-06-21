@@ -1,5 +1,6 @@
 #include "quanpin_dictionary.h"
 
+#include "../common/helpcode_utils.h"
 #include "quanpin_query.h"
 #include "../googlepinyinime-rev/src/include/pinyinime.h"
 #include "../shuangpin/shuangpin_utils.h"
@@ -525,7 +526,7 @@ std::string QuanpinDictionary::build_sql_for_updating_word(std::string pinyin, c
         return "";
     }
 
-    size_t han_cnt = ShuangpinUtil::cnt_han_chars(word);
+    size_t han_cnt = HelpcodeUtils::count_han_chars(word);
     auto segments = cuts.front();
     if (segments.size() > han_cnt)
     {
@@ -570,7 +571,7 @@ bool QuanpinDictionary::do_validate(const std::string &key, const std::string &j
     {
         return false;
     }
-    if (jp.size() != ShuangpinUtil::cnt_han_chars(value))
+    if (jp.size() != HelpcodeUtils::count_han_chars(value))
     {
         return false;
     }
