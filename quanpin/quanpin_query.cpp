@@ -361,13 +361,13 @@ Segments cut_pinyin_greedy(const std::string &pinyin, bool intact_only)
 
     if (pinyin.find('\'') == std::string::npos)
     {
-        return cut_one_piece_greedy(pinyin, intact_only);
+        return cut_one_piece_min_segments(pinyin, intact_only);
     }
 
     Segments merged;
     for (const auto &part : split(pinyin, '\''))
     {
-        auto cut = cut_one_piece_greedy(part, intact_only);
+        auto cut = cut_one_piece_min_segments(part, intact_only);
         if (cut.empty())
         {
             if (!part.empty())
@@ -388,14 +388,13 @@ std::vector<Segments> cut_pinyin_by_mode(const std::string &pinyin, const std::s
         throw std::invalid_argument("mode must be one of: greedy, correction");
     }
 
-    const auto greedy = cut_pinyin_greedy(pinyin, false);
-    if (!greedy.empty())
-    {
-        return {greedy};
-    }
-
     if (mode == "greedy")
     {
+        const auto greedy = cut_pinyin_greedy(pinyin, false);
+        if (!greedy.empty())
+        {
+            return {greedy};
+        }
         return {};
     }
 
@@ -403,6 +402,12 @@ std::vector<Segments> cut_pinyin_by_mode(const std::string &pinyin, const std::s
     if (!intact.empty())
     {
         return {intact};
+    }
+
+    const auto greedy = cut_pinyin_greedy(pinyin, false);
+    if (!greedy.empty())
+    {
+        return {greedy};
     }
 
     return {};

@@ -211,6 +211,7 @@ void test_quanpin_query_timings()
     run_quanpin_query_case(dictionary, "nishuo");
     run_quanpin_query_case(dictionary, "nishuon");
     run_quanpin_query_case(dictionary, "nishuone");
+    run_quanpin_query_case(dictionary, "keneng");
 }
 
 int main(int argc, char *argv[])

@@ -126,6 +126,76 @@ std::vector<std::string> cut_one_piece_greedy(const std::string &pinyin, bool in
     return result;
 }
 
+std::vector<std::string> cut_one_piece_min_segments(const std::string &pinyin, bool intact_only)
+{
+    const auto &pinyin_set = intact_only ? intact_pinyin_set() : prefix_pinyin_set();
+    std::unordered_map<size_t, std::vector<std::string>> memo;
+    std::unordered_set<size_t> visiting;
+
+    const auto solve = [&](auto &&self, size_t index) -> std::vector<std::string> {
+        if (index == pinyin.size())
+        {
+            return {};
+        }
+
+        if (const auto found = memo.find(index); found != memo.end())
+        {
+            return found->second;
+        }
+
+        if (!visiting.insert(index).second)
+        {
+            return {};
+        }
+
+        std::vector<std::string> best;
+        bool has_best = false;
+
+        for (size_t end = pinyin.size(); end > index; --end)
+        {
+            const auto piece = pinyin.substr(index, end - index);
+            if (pinyin_set.find(piece) == pinyin_set.end())
+            {
+                continue;
+            }
+
+            std::vector<std::string> suffix;
+            if (end < pinyin.size())
+            {
+                suffix = self(self, end);
+                if (suffix.empty())
+                {
+                    continue;
+                }
+            }
+
+            std::vector<std::string> candidate;
+            candidate.reserve(1 + suffix.size());
+            candidate.push_back(piece);
+            candidate.insert(candidate.end(), suffix.begin(), suffix.end());
+
+            if (!has_best || candidate.size() < best.size())
+            {
+                best = std::move(candidate);
+                has_best = true;
+                continue;
+            }
+
+            if (candidate.size() == best.size() && !candidate.empty() && !best.empty() &&
+                candidate.front().size() < best.front().size())
+            {
+                best = std::move(candidate);
+            }
+        }
+
+        visiting.erase(index);
+        memo.emplace(index, has_best ? best : std::vector<std::string>{});
+        return has_best ? best : std::vector<std::string>{};
+    };
+
+    return solve(solve, 0);
+}
+
 bool is_complete_pinyin_input(const std::string &pinyin)
 {
     if (pinyin.empty())
