@@ -247,4 +247,15 @@ std::string strip_active_helpcodes(const std::string &raw_input, const std::stri
     return raw_input.substr(0, raw_input.size() - helpcode_length);
 }
 
+std::string strip_active_helpcodes_with_cases(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    const auto &input_with_cases = raw_input_with_cases.empty() ? raw_input : raw_input_with_cases;
+    const size_t helpcode_length = detect_active_helpcode_length(raw_input, raw_input_with_cases);
+    if (helpcode_length == 0 || input_with_cases.size() < helpcode_length)
+    {
+        return input_with_cases;
+    }
+    return input_with_cases.substr(0, input_with_cases.size() - helpcode_length);
+}
+
 } // namespace quanpin
