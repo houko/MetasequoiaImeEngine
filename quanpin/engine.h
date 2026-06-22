@@ -19,6 +19,7 @@ class QuanpinEngine
     int update_weight_by_word(std::string word);
     int update_weight_by_pinyin_and_word(std::string pinyin, std::string word);
     int delete_by_pinyin_and_word(std::string pinyin, std::string word);
+    int insert_word_to_series_cache(const std::string &pinyin, const std::string &word);
     std::string search_sentence_from_ime_engine(const std::string &user_pinyin);
     void reset_state();
     void reset_cache();

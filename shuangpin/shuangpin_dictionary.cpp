@@ -1061,6 +1061,36 @@ int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &
     return 0;
 }
 
+int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word)
+{
+    auto insert_into_cache = [&](auto &cache) {
+        if (auto opt = cache.get(pinyin))
+        {
+            auto list = opt.value();
+            const auto exists =
+                std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return std::get<1>(item) == word; });
+            if (exists == list.end())
+            {
+                if (list.size() >= 1)
+                {
+                    list.insert(list.begin() + 1, make_tuple(pinyin, word, 1));
+                }
+                else
+                {
+                    list.push_back(make_tuple(pinyin, word, 1));
+                }
+            }
+            cache.insert(pinyin, list);
+            return true;
+        }
+        return false;
+    };
+
+    const bool updated_single = insert_into_cache(_cached_buffer_sgl);
+    const bool updated_double = insert_into_cache(_cached_buffer_dbl);
+    return updated_single || updated_double ? 0 : -1;
+}
+
 bool ShuangpinDictionary::is_all_complete_pinyin()
 {
     bool res = ShuangpinUtil::is_all_complete_pinyin(_pinyin_sequence, _pinyin_segmentation);

@@ -52,6 +52,31 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
     return query_normal(dictionary_, request);
 }
 
+int ShuangpinEngine::create_word(std::string pinyin, std::string word)
+{
+    return dictionary_.create_word(std::move(pinyin), std::move(word));
+}
+
+int ShuangpinEngine::update_weight_by_pinyin_and_word(std::string pinyin, std::string word)
+{
+    return dictionary_.update_weight_by_pinyin_and_word(std::move(pinyin), std::move(word));
+}
+
+int ShuangpinEngine::delete_by_pinyin_and_word(std::string pinyin, std::string word)
+{
+    return dictionary_.delete_by_pinyin_and_word(std::move(pinyin), std::move(word));
+}
+
+int ShuangpinEngine::insert_word_to_series_cache(const std::string &pinyin, const std::string &word)
+{
+    return dictionary_.insert_word_to_cached_buffer_series(pinyin, word);
+}
+
+int ShuangpinEngine::insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word)
+{
+    return dictionary_.insert_word_to_active_helpcode_cache(pinyin, word);
+}
+
 std::string ShuangpinEngine::search_sentence_from_ime_engine(const std::string &user_pinyin)
 {
     return dictionary_.search_sentence_from_ime_engine(user_pinyin);

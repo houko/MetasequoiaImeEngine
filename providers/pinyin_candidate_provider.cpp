@@ -1,5 +1,7 @@
 #include "pinyin_candidate_provider.h"
 #include "../core/scheme_type.h"
+#include "../shuangpin/shuangpin_query.h"
+#include "../shuangpin/shuangpin_utils.h"
 #include <fmt/core.h>
 #include <fmt/base.h>
 
@@ -27,4 +29,67 @@ void PinyinCandidateProvider::reset_cache()
 {
     quanpin_engine_.reset_cache();
     shuangpin_engine_.reset_cache();
+}
+
+int PinyinCandidateProvider::create_word(SchemeType scheme, std::string pinyin, std::string word)
+{
+    if (scheme == SchemeType::Shuangpin)
+    {
+        return shuangpin_engine_.create_word(std::move(pinyin), std::move(word));
+    }
+    return quanpin_engine_.create_word(std::move(pinyin), std::move(word));
+}
+
+int PinyinCandidateProvider::update_weight_by_pinyin_and_word(SchemeType scheme, std::string pinyin, std::string word)
+{
+    if (scheme == SchemeType::Shuangpin)
+    {
+        return shuangpin_engine_.update_weight_by_pinyin_and_word(std::move(pinyin), std::move(word));
+    }
+    return quanpin_engine_.update_weight_by_pinyin_and_word(std::move(pinyin), std::move(word));
+}
+
+int PinyinCandidateProvider::delete_by_pinyin_and_word(SchemeType scheme, std::string pinyin, std::string word)
+{
+    if (scheme == SchemeType::Shuangpin)
+    {
+        return shuangpin_engine_.delete_by_pinyin_and_word(std::move(pinyin), std::move(word));
+    }
+    return quanpin_engine_.delete_by_pinyin_and_word(std::move(pinyin), std::move(word));
+}
+
+int PinyinCandidateProvider::cache_dynamic_candidate(SchemeType scheme, const std::string &pinyin, const std::string &word)
+{
+    if (scheme == SchemeType::Shuangpin)
+    {
+        return shuangpin_engine_.insert_word_to_series_cache(pinyin, word);
+    }
+    return quanpin_engine_.insert_word_to_series_cache(pinyin, word);
+}
+
+int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word)
+{
+    if (request.scheme != SchemeType::Shuangpin || !request.enable_shuangpin_helpcode)
+    {
+        return 0;
+    }
+
+    const std::string &raw_input_with_cases =
+        request.raw_input_with_cases.empty() ? request.raw_input : request.raw_input_with_cases;
+    if (ShuangpinUtil::IsFullHelpMode(raw_input_with_cases))
+    {
+        return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);
+    }
+
+    if (request.raw_input.size() % 2 == 1 && request.raw_input.size() > 1)
+    {
+        const std::string base_raw_input = request.raw_input.substr(0, request.raw_input.size() - 1);
+        const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
+        if (ShuangpinUtil::is_all_complete_pinyin(base_raw_input, base_raw_segmentation))
+        {
+            return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);
+        }
+    }
+
+    return 0;
 }

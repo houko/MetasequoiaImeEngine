@@ -309,6 +309,37 @@ int QuanpinDictionary::delete_by_pinyin_and_word(std::string pinyin, std::string
     return OK;
 }
 
+int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, const std::string &word)
+{
+    if (pinyin.empty() || word.empty())
+    {
+        return ERROR_CODE;
+    }
+
+    if (auto cached = series_cache_.get(pinyin))
+    {
+        auto list = cached.value();
+        const auto exists =
+            std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return std::get<1>(item) == word; });
+        if (exists == list.end())
+        {
+            if (list.empty())
+            {
+                list.push_back(std::make_tuple(pinyin, word, 1));
+            }
+            else
+            {
+                list.insert(list.begin() + 1, std::make_tuple(pinyin, word, 1));
+            }
+        }
+        series_cache_.insert(pinyin, list);
+        return OK;
+    }
+
+    series_cache_.insert(pinyin, std::vector<WordItem>{std::make_tuple(pinyin, word, 1)});
+    return OK;
+}
+
 std::string QuanpinDictionary::search_sentence_from_ime_engine(const std::string &user_pinyin)
 {
     if (!decoder_ready_)

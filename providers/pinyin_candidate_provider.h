@@ -9,6 +9,11 @@ class PinyinCandidateProvider : public ICandidateProvider
   public:
     std::vector<WordItem> query(const QueryRequest &request) override;
     void reset_cache() override;
+    int create_word(SchemeType scheme, std::string pinyin, std::string word) override;
+    int update_weight_by_pinyin_and_word(SchemeType scheme, std::string pinyin, std::string word) override;
+    int delete_by_pinyin_and_word(SchemeType scheme, std::string pinyin, std::string word) override;
+    int cache_dynamic_candidate(SchemeType scheme, const std::string &pinyin, const std::string &word) override;
+    int cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word) override;
 
   private:
     QuanpinEngine quanpin_engine_;

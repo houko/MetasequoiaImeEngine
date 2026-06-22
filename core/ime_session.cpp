@@ -71,6 +71,31 @@ void ImeSession::reset_cache()
     refresh_candidates();
 }
 
+int ImeSession::create_word(std::string pinyin, std::string word)
+{
+    return provider_registry_.create_word(current_scheme_type(), std::move(pinyin), std::move(word));
+}
+
+int ImeSession::update_weight_by_pinyin_and_word(std::string pinyin, std::string word)
+{
+    return provider_registry_.update_weight_by_pinyin_and_word(current_scheme_type(), std::move(pinyin), std::move(word));
+}
+
+int ImeSession::delete_by_pinyin_and_word(std::string pinyin, std::string word)
+{
+    return provider_registry_.delete_by_pinyin_and_word(current_scheme_type(), std::move(pinyin), std::move(word));
+}
+
+int ImeSession::cache_dynamic_candidate(const std::string &pinyin, const std::string &word)
+{
+    return provider_registry_.cache_dynamic_candidate(current_scheme_type(), pinyin, word);
+}
+
+int ImeSession::cache_dynamic_candidate_for_current_request(const std::string &word)
+{
+    return provider_registry_.cache_dynamic_candidate_for_request(state_.request, word);
+}
+
 SchemeType ImeSession::current_scheme_type() const
 {
     return scheme_->type();
