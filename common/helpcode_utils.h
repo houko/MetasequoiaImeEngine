@@ -13,7 +13,7 @@ std::string get_first_han_char(const std::string &words);
 std::string get_last_han_char(const std::string &words);
 std::string::size_type count_han_chars(const std::string &words);
 std::string::size_type count_utf8_chars(const std::string &text);
-std::string compute_helpcodes(const std::string &words);
+std::string compute_helpcodes(const std::string &words, bool uppercase_all = false);
 
 bool is_quanpin_single_help_mode(const std::string &pinyin_with_cases);
 bool is_quanpin_double_help_mode(const std::string &pinyin_with_cases);

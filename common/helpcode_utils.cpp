@@ -138,7 +138,7 @@ std::string::size_type count_utf8_chars(const std::string &text)
     return utf8::distance(text.begin(), text.end());
 }
 
-std::string compute_helpcodes(const std::string &words)
+std::string compute_helpcodes(const std::string &words, bool uppercase_all)
 {
     std::string helpcodes;
     const auto &keymap = helpcode_keymap();
@@ -149,7 +149,6 @@ std::string compute_helpcodes(const std::string &words)
         if (found != keymap.end())
         {
             helpcodes += found->second;
-            helpcodes[1] = static_cast<char>(toupper(static_cast<unsigned char>(helpcodes[1])));
         }
     }
     else
@@ -170,7 +169,6 @@ std::string compute_helpcodes(const std::string &words)
         if (last != keymap.end())
         {
             helpcodes += last->second.substr(0, 1);
-            helpcodes[1] = static_cast<char>(toupper(static_cast<unsigned char>(helpcodes[1])));
         }
         else
         {
@@ -180,6 +178,16 @@ std::string compute_helpcodes(const std::string &words)
 
     if (!helpcodes.empty())
     {
+        if (uppercase_all)
+        {
+            std::transform(helpcodes.begin(), helpcodes.end(), helpcodes.begin(), [](unsigned char ch) {
+                return static_cast<char>(std::toupper(ch));
+            });
+        }
+        else if (helpcodes.size() >= 2)
+        {
+            helpcodes[1] = static_cast<char>(toupper(static_cast<unsigned char>(helpcodes[1])));
+        }
         helpcodes = "(" + helpcodes + ")";
     }
     return helpcodes;
