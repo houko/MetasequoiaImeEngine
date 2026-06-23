@@ -59,6 +59,8 @@ class QuanpinDictionary
     std::vector<WordItem> query_database(const quanpin::Segments &segments, const std::string &segmentation);
     std::vector<WordItem> append_ime_fallback(const std::string &raw_input, const std::string &segmentation,
                                               std::vector<WordItem> result);
+    std::vector<WordItem> append_sparse_pinyin_fallbacks(const quanpin::Segments &segments, std::vector<WordItem> result);
+    static void append_unique_words(std::vector<WordItem> &result, const std::vector<WordItem> &extra);
 
     std::vector<std::string> select_data(const std::string &sql_str);
     std::vector<WordItem> select_complete_data(const std::string &sql_str);

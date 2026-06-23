@@ -2,6 +2,7 @@
 
 #include "../common/helpcode_utils.h"
 #include "quanpin_query.h"
+#include "quanpin_utils.h"
 #include "../googlepinyinime-rev/src/include/pinyinime.h"
 #include "../shuangpin/shuangpin_utils.h"
 #include <algorithm>
@@ -13,6 +14,8 @@
 
 namespace
 {
+constexpr size_t kSparsePinyinFallbackThreshold = 8;
+
 bool is_alpha_vk(UINT vk)
 {
     return vk >= 'A' && vk <= 'Z';
@@ -126,6 +129,11 @@ std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_inp
         const std::string partial_input = remove_delimiters(partial_segmentation);
         auto partial_result = query_single_path(partial_input, partial_segmentation, partial_segments);
         result.insert(result.end(), partial_result.begin(), partial_result.end());
+    }
+
+    if (result.size() < kSparsePinyinFallbackThreshold)
+    {
+        result = append_sparse_pinyin_fallbacks(segments, std::move(result));
     }
 
     return result;
@@ -260,6 +268,37 @@ std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &
         result.emplace_back(segmentation.empty() ? raw_input : segmentation, sentence, 1);
     }
     return result;
+}
+
+std::vector<WordItem> QuanpinDictionary::append_sparse_pinyin_fallbacks(const quanpin::Segments &segments,
+                                                                        std::vector<WordItem> result)
+{
+    for (const auto &fallback_segments : quanpin::sparse_pinyin_fallback_segments(segments))
+    {
+        if (fallback_segments.empty())
+        {
+            continue;
+        }
+
+        const std::string fallback_segmentation = quanpin::join_segments(fallback_segments);
+        const std::string fallback_input = remove_delimiters(fallback_segmentation);
+        const auto fallback_result = query_single_path(fallback_input, fallback_segmentation, fallback_segments);
+        append_unique_words(result, fallback_result);
+    }
+    return result;
+}
+
+void QuanpinDictionary::append_unique_words(std::vector<WordItem> &result, const std::vector<WordItem> &extra)
+{
+    for (const auto &item : extra)
+    {
+        const auto exists = std::find_if(result.begin(), result.end(),
+                                         [&](const WordItem &existing) { return std::get<1>(existing) == std::get<1>(item); });
+        if (exists == result.end())
+        {
+            result.push_back(item);
+        }
+    }
 }
 
 int QuanpinDictionary::create_word(std::string pinyin, std::string word)

@@ -6,6 +6,7 @@
 
 namespace quanpin
 {
+using Segments = std::vector<std::string>;
 
 const std::vector<std::string> &intact_pinyin_list();
 const std::unordered_set<std::string> &intact_pinyin_set();
@@ -16,5 +17,6 @@ bool is_complete_pinyin_input(const std::string &pinyin);
 size_t detect_active_helpcode_length(const std::string &raw_input, const std::string &raw_input_with_cases);
 std::string strip_active_helpcodes(const std::string &raw_input, const std::string &raw_input_with_cases);
 std::string strip_active_helpcodes_with_cases(const std::string &raw_input, const std::string &raw_input_with_cases);
+std::vector<Segments> sparse_pinyin_fallback_segments(const Segments &segments);
 
 } // namespace quanpin

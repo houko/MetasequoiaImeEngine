@@ -6,6 +6,17 @@ namespace quanpin
 {
 namespace
 {
+struct SparsePinyinFallbackEntry
+{
+    Segments replacement;
+    bool append_suffix = true;
+};
+
+struct SparsePinyinFallbackRule
+{
+    const char *full;
+    std::vector<SparsePinyinFallbackEntry> replacements;
+};
 
 std::vector<std::string> split(const std::string &text, char delimiter)
 {
@@ -32,6 +43,27 @@ bool is_complete_pinyin_part(const std::string &part)
     }
 
     return !cut_one_piece_greedy(part, true).empty();
+}
+
+Segments append_rest(const Segments &head, const Segments &segments)
+{
+    Segments combined = head;
+    if (segments.size() > 1)
+    {
+        combined.insert(combined.end(), segments.begin() + 1, segments.end());
+    }
+    return combined;
+}
+
+const std::vector<SparsePinyinFallbackRule> &sparse_pinyin_fallback_rules()
+{
+    static const std::vector<SparsePinyinFallbackRule> kRules = {
+        {"dia", {{Segments{"di", "a"}, true}, {Segments{"di"}, false}}},
+        {"biang", {{Segments{"bi", "ang"}, true}, {Segments{"bi"}, false}}},
+        {"gei", {{Segments{"ge"}, false}}},
+        {"yo", {{Segments{"y"}, false}}},
+    };
+    return kRules;
 }
 
 } // namespace
@@ -256,6 +288,34 @@ std::string strip_active_helpcodes_with_cases(const std::string &raw_input, cons
         return input_with_cases;
     }
     return input_with_cases.substr(0, input_with_cases.size() - helpcode_length);
+}
+
+std::vector<Segments> sparse_pinyin_fallback_segments(const Segments &segments)
+{
+    if (segments.empty())
+    {
+        return {};
+    }
+
+    const auto &first = segments.front();
+    for (const auto &rule : sparse_pinyin_fallback_rules())
+    {
+        if (first != rule.full)
+        {
+            continue;
+        }
+
+        std::vector<Segments> fallbacks;
+        fallbacks.reserve(rule.replacements.size());
+        for (const auto &replacement : rule.replacements)
+        {
+            fallbacks.push_back(
+                replacement.append_suffix ? append_rest(replacement.replacement, segments) : replacement.replacement);
+        }
+        return fallbacks;
+    }
+
+    return {};
 }
 
 } // namespace quanpin
