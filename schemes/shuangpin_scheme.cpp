@@ -43,6 +43,13 @@ void ShuangpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
+    if (vk == VK_OEM_7)
+    {
+        key_strokes_.push_back(KeyStroke{vk, modifiers_down, wch});
+        raw_input_.push_back('\'');
+        return;
+    }
+
     if (!is_alpha_vk(vk))
     {
         return;
@@ -71,10 +78,11 @@ QueryRequest ShuangpinScheme::build_request() const
     request.raw_input.reserve(raw_input_.size());
     for (const char ch : raw_input_)
     {
-        request.raw_input.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        request.raw_input.push_back(
+            ch == '\'' ? ch : static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
     }
     request.key_strokes = key_strokes_;
-    request.valid = !request.raw_input.empty();
+    request.valid = shuangpin::effective_input_length(request.raw_input) > 0;
 
     if (!request.valid)
     {

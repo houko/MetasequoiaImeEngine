@@ -76,14 +76,16 @@ int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequ
 
     const std::string &raw_input_with_cases =
         request.raw_input_with_cases.empty() ? request.raw_input : request.raw_input_with_cases;
-    if (ShuangpinUtil::IsFullHelpMode(raw_input_with_cases))
+    const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
+    const std::string pure_input_with_cases = shuangpin::remove_manual_delimiters(raw_input_with_cases);
+    if (ShuangpinUtil::IsFullHelpMode(pure_input_with_cases))
     {
         return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);
     }
 
-    if (request.raw_input.size() % 2 == 1 && request.raw_input.size() > 1)
+    if (pure_input.size() % 2 == 1 && pure_input.size() > 1)
     {
-        const std::string base_raw_input = request.raw_input.substr(0, request.raw_input.size() - 1);
+        const std::string base_raw_input = pure_input.substr(0, pure_input.size() - 1);
         const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
         if (ShuangpinUtil::is_all_complete_pinyin(base_raw_input, base_raw_segmentation))
         {

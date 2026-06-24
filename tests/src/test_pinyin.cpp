@@ -3,6 +3,8 @@
 //
 #include <Windows.h>
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <fmt/core.h>
@@ -10,6 +12,7 @@
 #include "core/ime_session.h"
 #include "quanpin/quanpin_dictionary.h"
 #include "shuangpin/shuangpin_dictionary.h"
+#include "shuangpin/shuangpin_query.h"
 
 using namespace std;
 
@@ -34,11 +37,36 @@ void expect_session_state(const ImeSession &session, const std::string &expected
 
 } // namespace
 
+std::string hex_dump(const std::string &text)
+{
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        if (i > 0)
+        {
+            oss << ' ';
+        }
+        oss << std::setw(2) << static_cast<int>(static_cast<unsigned char>(text[i]));
+    }
+    return oss.str();
+}
+
 void print_candidates(const std::vector<WordItem> &result)
 {
-    for (const auto &[code, word, weight] : result)
+    for (size_t index = 0; index < result.size(); ++index)
     {
-        fmt::println("Candidate: {} [{}] ({})", word, code, weight);
+        const auto &[code, word, weight] = result[index];
+        try
+        {
+            fmt::println("Candidate #{}: {} [{}] ({})", index, word, code, weight);
+        }
+        catch (const std::exception &ex)
+        {
+            throw std::runtime_error(fmt::format(
+                "Failed to print candidate #{}; word bytes=[{}], code bytes=[{}], error={}",
+                index, hex_dump(word), hex_dump(code), ex.what()));
+        }
     }
 }
 
@@ -148,6 +176,42 @@ void test_shuangpin_session_backspace()
     expect(session.get_request().valid, "Shuangpin session request should stay valid after backspace.");
 }
 
+void test_shuangpin_manual_apostrophe()
+{
+    ImeSession session(SchemeType::Shuangpin);
+
+    fmt::println("==== Shuangpin Manual Apostrophe ====");
+    feed_sequence(session, {'J', 'W', VK_OEM_7, 'D'}, {'j', 'w', '\'', 'd'});
+    expect_session_state(session, "jw'd");
+    expect(session.get_request().raw_segmentation.find('\'') != std::string::npos,
+           fmt::format("Expected raw segmentation to preserve apostrophes, got '{}'",
+                       session.get_request().raw_segmentation));
+    expect(session.get_request().normalized_segmentation.find('\'') != std::string::npos,
+           fmt::format("Expected normalized segmentation to preserve apostrophes, got '{}'",
+                       session.get_request().normalized_segmentation));
+    expect(session.get_request().normalized_input.find('\'') == std::string::npos,
+           fmt::format("Expected normalized input to strip apostrophes, got '{}'",
+                       session.get_request().normalized_input));
+
+    session.handle_key(VK_BACK);
+    expect_session_state(session, "jw'");
+    session.handle_key(VK_BACK);
+    expect_session_state(session, "jw");
+}
+
+void test_shuangpin_query_manual_apostrophe()
+{
+    fmt::println("==== Shuangpin Query Manual Apostrophe ====");
+    expect(shuangpin::segment_input("ce'ce") == "ce'ce",
+           "Expected manual apostrophe to be preserved in raw segmentation for complete chunks.");
+    expect(shuangpin::normalize_input_with_delimiters("ce'ce") == "ce'ce",
+           "Expected manual apostrophe to be preserved in normalized segmentation for complete chunks.");
+    expect(shuangpin::normalize_input("ce'ce") == "cece",
+           "Expected normalized input to strip apostrophes for complete chunks.");
+    expect(shuangpin::is_complete_input("ce'ce"), "Expected ce'ce to be recognized as complete shuangpin input.");
+    expect(!shuangpin::is_complete_input("jw'"), "Expected trailing manual apostrophe to stay incomplete.");
+}
+
 void test_quanpin_dictionary_backspace()
 {
     QuanpinDictionary dictionary;
@@ -216,15 +280,25 @@ void test_quanpin_query_timings()
 
 int main(int argc, char *argv[])
 {
-    test_shuangpin_session();
-    test_shuangpin_session02();
-    test_quanpin_session();
-    test_dynamic_switch();
-    test_quanpin_session_backspace();
-    test_shuangpin_session_backspace();
-    test_quanpin_dictionary_backspace();
-    test_shuangpin_dictionary_backspace();
-    test_quanpin_query_timings();
-    fmt::println("All tests passed.");
-    return 0;
+    try
+    {
+        test_shuangpin_session();
+        test_shuangpin_session02();
+        test_quanpin_session();
+        test_dynamic_switch();
+        test_quanpin_session_backspace();
+        test_shuangpin_session_backspace();
+        test_shuangpin_manual_apostrophe();
+        test_quanpin_dictionary_backspace();
+        test_shuangpin_dictionary_backspace();
+        test_shuangpin_query_manual_apostrophe();
+        test_quanpin_query_timings();
+        fmt::println("All tests passed.");
+        return 0;
+    }
+    catch (const std::exception &ex)
+    {
+        fmt::println(stderr, "Test failure: {}", ex.what());
+        return 1;
+    }
 }

@@ -7,7 +7,8 @@ namespace
 {
 std::vector<WordItem> query_normal(ShuangpinDictionary &dictionary, const QueryRequest &request)
 {
-    return dictionary.generateSeries(request.raw_input, shuangpin::segment_input(request.raw_input));
+    const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
+    return dictionary.generateSeries(pure_input, shuangpin::segment_input(request.raw_input));
 }
 }
 
@@ -21,29 +22,31 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
     const std::string &raw_input = request.raw_input;
     const std::string &raw_input_with_cases =
         request.raw_input_with_cases.empty() ? request.raw_input : request.raw_input_with_cases;
+    const std::string pure_input = shuangpin::remove_manual_delimiters(raw_input);
+    const std::string pure_input_with_cases = shuangpin::remove_manual_delimiters(raw_input_with_cases);
 
-    if (raw_input.empty())
+    if (pure_input.empty())
     {
         return {};
     }
 
     if (request.enable_shuangpin_helpcode)
     {
-        if (ShuangpinUtil::IsFullHelpMode(raw_input_with_cases))
+        if (ShuangpinUtil::IsFullHelpMode(pure_input_with_cases))
         {
-            const std::string base_raw_input = raw_input.substr(0, raw_input.size() - 2);
+            const std::string base_raw_input = pure_input.substr(0, pure_input.size() - 2);
             const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
-            const std::string help_codes = raw_input.substr(raw_input.size() - 2, 2);
+            const std::string help_codes = pure_input.substr(pure_input.size() - 2, 2);
             return dictionary_.generate_with_helpcodes(base_raw_input, base_raw_segmentation, raw_input, help_codes);
         }
 
-        if (raw_input.size() % 2 == 1 && raw_input.size() > 1)
+        if (pure_input.size() % 2 == 1 && pure_input.size() > 1)
         {
-            const std::string base_raw_input = raw_input.substr(0, raw_input.size() - 1);
+            const std::string base_raw_input = pure_input.substr(0, pure_input.size() - 1);
             const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
             if (ShuangpinUtil::is_all_complete_pinyin(base_raw_input, base_raw_segmentation))
             {
-                const std::string help_codes = raw_input.substr(raw_input.size() - 1, 1);
+                const std::string help_codes = pure_input.substr(pure_input.size() - 1, 1);
                 return dictionary_.generate_with_helpcodes(base_raw_input, base_raw_segmentation, raw_input, help_codes);
             }
         }
