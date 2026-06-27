@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/cache.h"
+#include "../quanpin/quanpin_query.h"
 #include <windows.h>
 #include <shared_mutex>
 #include <array>
@@ -65,6 +66,9 @@ class ShuangpinDictionary
     std::ifstream inputFile;
     std::string db_path;
     sqlite3 *db = nullptr;
+    std::string quanpin_db_path_;
+    sqlite3 *quanpin_db_ = nullptr;
+    std::unordered_map<std::string, sqlite3_stmt *> quanpin_statement_cache_;
     std::unordered_map<std::string, std::vector<std::string>> dict_map;
     int default_candicate_page_limit = 80;
 
@@ -94,6 +98,8 @@ class ShuangpinDictionary
     int insert_data(std::string sql_str);
     int update_data(std::string sql_str);
     int delete_data(std::string sql_str);
+    std::vector<WordItem> query_from_quanpin_database(const std::string &pinyin_sequence,
+                                                      const std::string &pinyin_segmentation);
     std::pair<std::string, bool> build_sql(const std::string &sp_str, std::vector<std::string> &pinyin_list);
     std::string build_sql_for_creating_word(const std::string &sp_str);
     std::string build_sql_for_checking_word(std::string key, std::string jp, std::string value);

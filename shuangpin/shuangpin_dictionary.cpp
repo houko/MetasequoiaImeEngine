@@ -1,6 +1,7 @@
 #include "shuangpin_dictionary.h"
 #include "../common/helpcode_utils.h"
 #include "../common/string_utils.h"
+#include "../quanpin/quanpin_query.h"
 #include "shuangpin_utils.h"
 #include <mutex>
 #include <shared_mutex>
@@ -81,6 +82,17 @@ ShuangpinDictionary::ShuangpinDictionary()
     {
         spdlog::error("Failed to open db.");
     }
+
+    quanpin_db_path_ = quanpin::get_default_db_path();
+    exit = sqlite3_open(quanpin_db_path_.c_str(), &quanpin_db_);
+    if (exit != SQLITE_OK)
+    {
+        spdlog::error("Failed to open quanpin db.");
+    }
+    else
+    {
+        quanpin::warm_up(quanpin_db_, quanpin_statement_cache_);
+    }
 }
 
 /**
@@ -115,20 +127,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate( //
             return candidate_list;
         }
 
-        vector<string> pinyin_list;
-        boost::split(pinyin_list, pinyin_segmentation, boost::is_any_of("'"));
-        // Build sql for query
-        auto sql_pair = build_sql(pinyin_sequence, pinyin_list);
-        string sql_str = sql_pair.first;
-        if (sql_pair.second) // Need to filter
-        {
-            auto key_value_weight_list = select_complete_data(sql_str);
-            filter_key_value_list(candidate_list, pinyin_list, key_value_weight_list);
-        }
-        else
-        {
-            candidate_list = select_complete_data(sql_str);
-        }
+        candidate_list = query_from_quanpin_database(pinyin_sequence, pinyin_segmentation);
         _cached_buffer.insert(pinyin_sequence, candidate_list);
     }
     return candidate_list;
@@ -770,10 +769,57 @@ int ShuangpinDictionary::delete_by_pinyin_and_word(string pinyin, string word)
 
 ShuangpinDictionary::~ShuangpinDictionary()
 {
+    for (auto &[sql, stmt] : quanpin_statement_cache_)
+    {
+        if (stmt != nullptr)
+        {
+            sqlite3_finalize(stmt);
+        }
+    }
+    if (quanpin_db_)
+    {
+        sqlite3_close(quanpin_db_);
+    }
     if (db)
     {
         sqlite3_close(db);
     }
+}
+
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_database(
+    const std::string &pinyin_sequence,
+    const std::string &pinyin_segmentation)
+{
+    if (quanpin_db_ == nullptr || pinyin_segmentation.empty())
+    {
+        return {};
+    }
+
+    const std::string quanpin_segmentation =
+        ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(pinyin_segmentation);
+    const auto segments = quanpin::split_segments(quanpin_segmentation);
+    if (segments.empty())
+    {
+        return {};
+    }
+
+    std::vector<WordItem> candidate_list;
+    try
+    {
+        const auto flat_items =
+            quanpin::query_segments_flat(segments, quanpin_db_, quanpin_statement_cache_, default_candicate_page_limit);
+        candidate_list.reserve(flat_items.size());
+        for (const auto &[word, weight] : flat_items)
+        {
+            candidate_list.emplace_back(pinyin_sequence, word, weight);
+        }
+    }
+    catch (const std::exception &ex)
+    {
+        spdlog::warn("ShuangpinDictionary quanpin sqlite query failed: {}", ex.what());
+    }
+
+    return candidate_list;
 }
 
 vector<string> ShuangpinDictionary::select_data(string sql_str)
