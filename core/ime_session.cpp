@@ -25,6 +25,11 @@ void ImeSession::set_shuangpin_helpcode_enabled(bool enabled)
     enable_shuangpin_helpcode_ = enabled;
 }
 
+void ImeSession::set_quanpin_helpcode_enabled(bool enabled)
+{
+    enable_quanpin_helpcode_ = enabled;
+}
+
 void ImeSession::replace_shuangpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
 {
     if (scheme_->type() != SchemeType::Shuangpin)
@@ -121,6 +126,7 @@ void ImeSession::refresh_candidates()
     state_.preedit = scheme_->get_preedit();
     state_.request = scheme_->build_request();
     state_.request.enable_shuangpin_helpcode = enable_shuangpin_helpcode_;
+    state_.request.enable_quanpin_helpcode = enable_quanpin_helpcode_;
 
     if (!state_.request.valid)
     {

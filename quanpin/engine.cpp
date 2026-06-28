@@ -15,7 +15,7 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
     }
 
     const size_t helpcode_length =
-        request.enable_shuangpin_helpcode
+        request.enable_quanpin_helpcode
             ? quanpin::detect_active_helpcode_length(request.raw_input, request.raw_input_with_cases)
             : 0;
 

@@ -22,6 +22,7 @@ struct QueryRequest
     std::string normalized_segmentation;
     std::string segmentation;
     bool enable_shuangpin_helpcode = false;
+    bool enable_quanpin_helpcode = false;
     std::vector<KeyStroke> key_strokes;
     bool valid = false;
 };
