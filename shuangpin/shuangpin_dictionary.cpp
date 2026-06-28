@@ -2,6 +2,7 @@
 #include "../common/helpcode_utils.h"
 #include "../common/string_utils.h"
 #include "../quanpin/quanpin_query.h"
+#include "shuangpin_query.h"
 #include "shuangpin_utils.h"
 #include <mutex>
 #include <shared_mutex>
@@ -10,7 +11,6 @@
 #include <tuple>
 #include <unordered_set>
 #include <utility>
-#include <regex>
 #include <cstdlib>
 #include "../googlepinyinime-rev/src/include/pinyinime.h"
 #include "spdlog/spdlog.h"
@@ -20,6 +20,29 @@
 #include <Windows.h>
 
 using namespace std;
+
+namespace
+{
+
+std::string remove_delimiters(const std::string &segmented)
+{
+    std::string normalized = segmented;
+    normalized.erase(std::remove(normalized.begin(), normalized.end(), '\''), normalized.end());
+    return normalized;
+}
+
+std::string escape_sql_text(std::string text)
+{
+    size_t pos = 0;
+    while ((pos = text.find('\'', pos)) != std::string::npos)
+    {
+        text.insert(pos, 1, '\'');
+        pos += 2;
+    }
+    return text;
+}
+
+} // namespace
 
 vector<string> ShuangpinDictionary::alpha_list{
     "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", //
@@ -72,19 +95,8 @@ ShuangpinDictionary::ShuangpinDictionary()
         spdlog::error("Failed to open googleime dictionary.");
     }
 
-    db_path = fmt::format(                       //
-        "{}\\{}\\cutted_flyciku_with_jp.db",     //
-        ShuangpinUtil::get_local_appdata_path(), //
-        ShuangpinUtil::app_name                  //
-    );
-    int exit = sqlite3_open(db_path.c_str(), &db);
-    if (exit != SQLITE_OK)
-    {
-        spdlog::error("Failed to open db.");
-    }
-
     quanpin_db_path_ = quanpin::get_default_db_path();
-    exit = sqlite3_open(quanpin_db_path_.c_str(), &quanpin_db_);
+    int exit = sqlite3_open(quanpin_db_path_.c_str(), &quanpin_db_);
     if (exit != SQLITE_OK)
     {
         spdlog::error("Failed to open quanpin db.");
@@ -353,7 +365,8 @@ void ShuangpinDictionary::filter_with_double_helpcodes(               //
         { /* 多字 */
             string firstHanChar = HelpcodeUtils::get_first_han_char(cur_word);
             string lastHanChar = HelpcodeUtils::get_last_han_char(cur_word);
-            if (HelpcodeUtils::helpcode_keymap().count(firstHanChar) && HelpcodeUtils::helpcode_keymap().count(lastHanChar))
+            if (HelpcodeUtils::helpcode_keymap().count(firstHanChar) &&
+                HelpcodeUtils::helpcode_keymap().count(lastHanChar))
             {
                 if (HelpcodeUtils::helpcode_keymap().at(firstHanChar)[0] == help_codes[0] &&
                     HelpcodeUtils::helpcode_keymap().at(lastHanChar)[0] == help_codes[1])
@@ -602,7 +615,7 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
     return 0;
 }
 
-std::string ShuangpinDictionary::get_quanpin()
+std::string ShuangpinDictionary::get_quanpin() const
 {
 
     string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation);
@@ -610,158 +623,115 @@ std::string ShuangpinDictionary::get_quanpin()
     return quanpin_str;
 }
 
-std::string ShuangpinDictionary::get_quanpin_seg()
+std::string ShuangpinDictionary::get_quanpin_seg() const
 {
     string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation);
     return quanpin_str;
 }
 
-void ShuangpinDictionary::filter_key_value_list(                       //
-    vector<ShuangpinDictionary::WordItem> &candidate_list,             //
-    const vector<string> &pinyin_list,                                 //
-    const vector<ShuangpinDictionary::WordItem> &key_value_weight_list //
-)
-{
-    string regex_str("");
-    for (const auto &each_pinyin : pinyin_list)
-    {
-        if (each_pinyin.size() == 2)
-        {
-            regex_str += each_pinyin;
-        }
-        else
-        {
-            regex_str = regex_str + each_pinyin + "[a-z]";
-        }
-    }
-    regex pattern(regex_str);
-    for (const auto &each_tuple : key_value_weight_list)
-    {
-        if (regex_match(get<0>(each_tuple), pattern))
-        {
-            candidate_list.push_back(each_tuple);
-        }
-    }
-}
-
 vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_for_creating_word(const string code)
 {
-    return select_complete_data(build_sql_for_creating_word(code));
+    return select_complete_data(quanpin_db_, build_quanpin_sql_for_creating_word(code));
 }
 
 int ShuangpinDictionary::create_word(string pinyin, string word)
 {
-    string jp;
-    for (size_t i = 0; i < pinyin.size(); i += 2)
-        jp += pinyin[i];
-    if (!do_validate(pinyin, jp, word))
+    OutputDebugString(fmt::format(L"[msime]: Creating word: pinyin={}, word={}", CommonUtils::string_to_wstring(pinyin),
+                                  CommonUtils::string_to_wstring(word))
+                          .c_str());
+    const std::string quanpin = shuangpin::normalize_input(pinyin);
+    OutputDebugString(fmt::format(L"[msime]: Normalized pinyin: {}", CommonUtils::string_to_wstring(quanpin)).c_str());
+    const auto cuts = quanpin::cut_pinyin_by_mode(quanpin, "correction");
+    if (cuts.empty())
+    {
         return ERROR_CODE;
-    if (check_data(build_sql_for_checking_word(pinyin, jp, word)))
+    }
+
+    pinyin = quanpin::join_segments(cuts.front());
+    const string jp = quanpin::segments_to_jianpin(cuts.front());
+    OutputDebugString(fmt::format(L"[msime]: Generated jianpin: {}", CommonUtils::string_to_wstring(jp)).c_str());
+    if (!do_validate(pinyin, jp, word))
+    {
+        OutputDebugString(fmt::format(L"[msime]: Validation failed for pinyin={}, jp={}, word={}",
+                                      CommonUtils::string_to_wstring(pinyin), CommonUtils::string_to_wstring(jp),
+                                      CommonUtils::string_to_wstring(word))
+                              .c_str());
+        return ERROR_CODE;
+    }
+    if (check_data(quanpin_db_, build_quanpin_sql_for_checking_word(pinyin, jp, word)))
     {
         return OK;
     }
-    insert_data(build_sql_for_inserting_word(pinyin, jp, word));
+    if (insert_data(quanpin_db_, build_quanpin_sql_for_inserting_word(pinyin, jp, word)) != OK)
+    {
+        return ERROR_CODE;
+    }
     /* 插入新词之后要清理缓存 */
     reset_cache();
     return OK;
 }
 
-string ShuangpinDictionary::build_sql_for_updating_word(string word)
+int ShuangpinDictionary::update_data(sqlite3 *target_db, const std::string &sql_str)
 {
-    int han_cnt = HelpcodeUtils::count_han_chars(word);
-    string pinyin = _pinyin_sequence.substr(0, han_cnt * 2);
-    string jp;
-    for (size_t i = 0; i < pinyin.size(); i += 2)
-        jp += pinyin[i];
-    if (!do_validate(pinyin, jp, word))
-        return "";
-    string table = choose_tbl(pinyin, jp.size());
-    string base_sql = "update {0} set weight = ( select MAX(weight) + 1 from {0} AS sub where sub.key = '{1}') "
-                      "where key = '{1}' and value = '{2}';";
-    string res_sql = fmt::format(base_sql, table, pinyin, word);
-    return res_sql;
-}
-
-string ShuangpinDictionary::build_sql_for_updating_word(string pinyin, string word)
-{
-    int han_cnt = HelpcodeUtils::count_han_chars(word);
-    pinyin = pinyin.substr(0, han_cnt * 2);
-    string jp;
-    for (size_t i = 0; i < pinyin.size(); i += 2)
-        jp += pinyin[i];
-    if (!do_validate(pinyin, jp, word))
-        return "";
-    string table = choose_tbl(pinyin, jp.size());
-    string base_sql = "update {0} set weight = ( select MAX(weight) + 1 from {0} AS sub where sub.key = '{1}') "
-                      "where key = '{1}' and value = '{2}';";
-    string res_sql = fmt::format(base_sql, table, pinyin, word);
-    return res_sql;
-}
-
-string ShuangpinDictionary::build_sql_for_deleting_word(string pinyin, string word)
-{
-    string jp;
-    for (size_t i = 0; i < pinyin.size(); i += 2)
-        jp += pinyin[i];
-    if (!do_validate(pinyin, jp, word))
-        return "";
-    string table = choose_tbl(pinyin, jp.size());
-    string base_sql = "delete from {0} where key = '{1}' and value = '{2}';";
-    string res_sql = fmt::format(base_sql, table, pinyin, word);
-    return res_sql;
-}
-
-int ShuangpinDictionary::update_data(string sql_str)
-{
-    sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
+    if (target_db == nullptr)
+    {
+        return ERROR_CODE;
+    }
+    char *errmsg = nullptr;
+    int exit = sqlite3_exec(target_db, sql_str.c_str(), nullptr, nullptr, &errmsg);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        spdlog::error("sqlite3_exec error: {}", errmsg == nullptr ? sqlite3_errmsg(target_db) : errmsg);
+        sqlite3_free(errmsg);
+        return ERROR_CODE;
     }
-    exit = sqlite3_step(stmt);
-    if (exit != SQLITE_DONE)
-    {
-        spdlog::error("sqlite3_step error.");
-    }
-    sqlite3_finalize(stmt);
-    return 0;
+    return OK;
 }
 
-int ShuangpinDictionary::delete_data(string sql_str)
+int ShuangpinDictionary::delete_data(sqlite3 *target_db, const std::string &sql_str)
 {
-    sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
+    if (target_db == nullptr)
+    {
+        return ERROR_CODE;
+    }
+    char *errmsg = nullptr;
+    int exit = sqlite3_exec(target_db, sql_str.c_str(), nullptr, nullptr, &errmsg);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        spdlog::error("sqlite3_exec error: {}", errmsg == nullptr ? sqlite3_errmsg(target_db) : errmsg);
+        sqlite3_free(errmsg);
+        return ERROR_CODE;
     }
-    exit = sqlite3_step(stmt);
-    if (exit != SQLITE_DONE)
-    {
-        spdlog::error("sqlite3_step error.");
-    }
-    sqlite3_finalize(stmt);
-    return 0;
+    return OK;
 }
 
 int ShuangpinDictionary::update_weight_by_word(string word)
 {
-    // std::unique_lock lock(mutex_);
-    update_data(build_sql_for_updating_word(word));
+    if (update_data(quanpin_db_, build_quanpin_sql_for_updating_word(word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    reset_cache();
     return OK;
 }
 
 int ShuangpinDictionary::update_weight_by_pinyin_and_word(string pinyin, string word)
 {
-    update_data(build_sql_for_updating_word(pinyin, word));
+    if (update_data(quanpin_db_, build_quanpin_sql_for_updating_word(std::move(pinyin), word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    reset_cache();
     return OK;
 }
 
 int ShuangpinDictionary::delete_by_pinyin_and_word(string pinyin, string word)
 {
-
-    delete_data(build_sql_for_deleting_word(pinyin, word));
+    if (delete_data(quanpin_db_, build_quanpin_sql_for_deleting_word(std::move(pinyin), word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    reset_cache();
     return OK;
 }
 
@@ -780,15 +750,10 @@ ShuangpinDictionary::~ShuangpinDictionary()
     {
         sqlite3_close(quanpin_db_);
     }
-    if (db)
-    {
-        sqlite3_close(db);
-    }
 }
 
 vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_database(
-    const std::string &pinyin_sequence,
-    const std::string &pinyin_segmentation)
+    const std::string &pinyin_sequence, const std::string &pinyin_segmentation)
 {
     if (quanpin_db_ == nullptr || pinyin_segmentation.empty())
     {
@@ -822,28 +787,16 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     return candidate_list;
 }
 
-vector<string> ShuangpinDictionary::select_data(string sql_str)
-{
-    vector<string> candidateList;
-    sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
-    if (exit != SQLITE_OK)
-    {
-        spdlog::error("sqlite3_prepare_v2 error.");
-    }
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        candidateList.push_back(string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))));
-    }
-    sqlite3_finalize(stmt);
-    return candidateList;
-}
-
-vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(string sql_str)
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(sqlite3 *target_db,
+                                                                                const std::string &sql_str)
 {
     vector<ShuangpinDictionary::WordItem> candidateList;
+    if (target_db == nullptr)
+    {
+        return candidateList;
+    }
     sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
+    int exit = sqlite3_prepare_v2(target_db, sql_str.c_str(), -1, &stmt, 0);
     if (exit != SQLITE_OK)
     {
         spdlog::error("sqlite3_prepare_v2 error.");
@@ -860,34 +813,14 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(
     return candidateList;
 }
 
-vector<pair<string, string>> ShuangpinDictionary::select_key_and_value(string sql_str)
+int ShuangpinDictionary::check_data(sqlite3 *target_db, const std::string &sql_str)
 {
-    vector<pair<string, string>> candidateList;
-    sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
-    if (exit != SQLITE_OK)
+    if (target_db == nullptr)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        return false;
     }
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        candidateList.push_back(make_pair(string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))),
-                                          string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2)))));
-    }
-    sqlite3_finalize(stmt);
-    return candidateList;
-}
-
-/**
- * @brief Check if data exists
- *
- * @param sql_str
- * @return int
- */
-int ShuangpinDictionary::check_data(string sql_str)
-{
     sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
+    int exit = sqlite3_prepare_v2(target_db, sql_str.c_str(), -1, &stmt, 0);
     if (exit != SQLITE_OK)
     {
         spdlog::error("sqlite3_prepare_v2 error.");
@@ -902,134 +835,161 @@ int ShuangpinDictionary::check_data(string sql_str)
     return exists;
 }
 
-int ShuangpinDictionary::insert_data(string sql_str)
+int ShuangpinDictionary::insert_data(sqlite3 *target_db, const std::string &sql_str)
 {
-    sqlite3_stmt *stmt;
-    int exit = sqlite3_prepare_v2(db, sql_str.c_str(), -1, &stmt, 0);
+    if (target_db == nullptr)
+    {
+        return ERROR_CODE;
+    }
+    char *errmsg = nullptr;
+    int exit = sqlite3_exec(target_db, sql_str.c_str(), nullptr, nullptr, &errmsg);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        spdlog::error("sqlite3_exec error: {}", errmsg == nullptr ? sqlite3_errmsg(target_db) : errmsg);
+        sqlite3_free(errmsg);
+        return ERROR_CODE;
     }
-    exit = sqlite3_step(stmt);
-    if (exit != SQLITE_DONE)
-    {
-        spdlog::info("sqlite3_step error.");
-    }
-    sqlite3_finalize(stmt);
-    return 0;
+    return OK;
 }
 
-pair<string, bool> ShuangpinDictionary::build_sql(const string &sp_str, vector<string> &pinyin_list)
+std::string ShuangpinDictionary::normalize_shuangpin_to_quanpin_segmentation(const std::string &pinyin) const
 {
-    bool all_entire_pinyin = true;
-    bool all_jp = true;
-    vector<string>::size_type jp_cnt = 0; // 简拼的数量
-    for (vector<string>::size_type i = 0; i < pinyin_list.size(); i++)
+    if (pinyin.empty())
     {
-        string cur_pinyin = pinyin_list[i];
-        if (cur_pinyin.size() == 1)
-        {
-            all_entire_pinyin = false;
-            jp_cnt += 1;
-        }
-        else
-        {
-            all_jp = false;
-        }
+        return {};
     }
-    string sql;
-    string base_sql("select * from {0} where {1} = '{2}' order by weight desc limit {3};");
-    string table = choose_tbl(sp_str, pinyin_list.size());
-    bool need_filtering = false;
-    if (all_entire_pinyin) // Segmentations are all quanpin
-    {
-        sql = fmt::format(base_sql, table, "key", sp_str, default_candicate_page_limit);
-    }
-    else if (all_jp) // Segmentations are all jianpin
-    {
-        sql = fmt::format(base_sql, table, "jp", sp_str, default_candicate_page_limit);
-    }
-    else if (jp_cnt == 1) // Only one jianpin
-    {
-        string sql_param0("");
-        for (vector<string>::size_type i = 0; i < pinyin_list.size(); i++)
-        {
-            if (pinyin_list[i].size() == 1)
-            {
-                sql_param0 = sql_param0 + pinyin_list[i] + "_";
-            }
-            else
-            {
-                sql_param0 += pinyin_list[i];
-            }
-        }
-        sql =
-            fmt::format( //
-                         // "select * from {0} where key >= '{1}' and key <= '{2}' order by weight desc limit {3};", //
-                "select * from {0} where key like '{1}' order by weight desc limit {2};", //
-                table, sql_param0, default_candicate_page_limit                           //
-            );
-    }
-    else // Neithor pure quanpin, nor pure jianpin, and count of jianpin is more than 1
-    {
-        need_filtering = true;
-        string sql_param("");
-        for (string &cur_pinyin : pinyin_list)
-        {
-            sql_param += cur_pinyin.substr(0, 1);
-        }
-        // TODO: not adding weight desc
-        sql = fmt::format("select * from {0} where jp = '{1}';", table, sql_param);
-    }
-    return make_pair(sql, need_filtering);
+
+    return shuangpin::normalize_input_with_delimiters(pinyin);
 }
 
-string ShuangpinDictionary::build_sql_for_creating_word(const string &sp_str)
+std::string ShuangpinDictionary::normalize_shuangpin_to_quanpin_input(const std::string &pinyin) const
 {
-    string base_sql = "select * from(select * from {} where key = '{}' order by weight desc limit {})";
-    string res_sql =
-        fmt::format(base_sql, choose_tbl(sp_str.substr(0, 2), 1), sp_str.substr(0, 2), default_candicate_page_limit);
-    string trimed_sp_str = sp_str.substr(0, 8); // 4 hanzi at most
-    for (size_t i = 4; i <= sp_str.size(); i += 2)
+    return remove_delimiters(normalize_shuangpin_to_quanpin_segmentation(pinyin));
+}
+
+std::string ShuangpinDictionary::build_quanpin_sql_for_creating_word(const std::string &pinyin) const
+{
+    const std::string normalized = normalize_shuangpin_to_quanpin_input(pinyin);
+    const auto cuts = quanpin::cut_pinyin_by_mode(normalized, "correction");
+    if (cuts.empty())
     {
-        res_sql = fmt::format(                                //
-                      base_sql,                               //
-                      choose_tbl(sp_str.substr(0, i), i / 2), //
-                      sp_str.substr(0, i),                    //
-                      default_candicate_page_limit)           //
-                  + " union all "                             //
-                  + res_sql;
+        return "";
     }
-    return res_sql;
+
+    std::string sql;
+    for (size_t i = 1; i <= cuts.front().size(); ++i)
+    {
+        std::vector<std::string> partial(cuts.front().begin(), cuts.front().begin() + i);
+        const std::string key = quanpin::join_segments(partial);
+        const std::string table = quanpin::build_table_name(partial);
+        const std::string each =
+            fmt::format("select * from(select * from {} where key = '{}' order by weight desc limit 80)", table, key);
+        sql = sql.empty() ? each : each + " union all " + sql;
+    }
+    return sql;
 }
 
-string ShuangpinDictionary::build_sql_for_checking_word(string key, string jp, string value)
+std::string ShuangpinDictionary::build_quanpin_sql_for_checking_word(const std::string &key, const std::string &jp,
+                                                                     const std::string &value) const
 {
-    string table = choose_tbl(key, jp.size());
-    string base_sql = "select 1 from {} where key = '{}' and value = '{}';";
-    return fmt::format(base_sql, table, key, value); // Default weight is 10,000
+    const auto cuts = quanpin::cut_pinyin_by_mode(key, "correction");
+    if (cuts.empty())
+    {
+        return "";
+    }
+    const std::string table = quanpin::build_table_name(cuts.front());
+    return fmt::format("select 1 from {} where key = '{}' and value = '{}';", table, escape_sql_text(key),
+                       escape_sql_text(value));
 }
 
-string ShuangpinDictionary::build_sql_for_inserting_word(string key, string jp, string value)
+std::string ShuangpinDictionary::build_quanpin_sql_for_inserting_word(const std::string &key, const std::string &jp,
+                                                                      const std::string &value) const
 {
-    string table = choose_tbl(key, jp.size());
-    string base_sql = "insert into {} (key, jp, value, weight) values ('{}', '{}', '{}', '{}');";
-    return fmt::format(base_sql, table, key, jp, value, 10000); // Default weight is 10,000
+    const auto cuts = quanpin::cut_pinyin_by_mode(key, "correction");
+    if (cuts.empty())
+    {
+        return "";
+    }
+    const std::string table = quanpin::build_table_name(cuts.front());
+    return fmt::format("insert into {} (key, jp, value, weight) values ('{}', '{}', '{}', '{}');", table,
+                       escape_sql_text(key), escape_sql_text(jp), escape_sql_text(value), 10000);
 }
 
-string ShuangpinDictionary::choose_tbl(const string &sp_str, size_t word_len)
+std::string ShuangpinDictionary::build_quanpin_sql_for_updating_word(const std::string &word) const
 {
-    string base_tbl("tbl_{}_{}");
-    if (word_len >= 8)
-        return fmt::format(base_tbl, "others", sp_str[0]);
-    return fmt::format(base_tbl, word_len, sp_str[0]);
+    return build_quanpin_sql_for_updating_word(get_quanpin(), word);
 }
 
-bool ShuangpinDictionary::do_validate(string key, string jp, string value)
+std::string ShuangpinDictionary::build_quanpin_sql_for_updating_word(std::string pinyin, const std::string &word) const
 {
-    if (key.size() % 2 || jp.size() != key.size() / 2 || key.size() != HelpcodeUtils::count_han_chars(value) * 2)
+    pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
+    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    if (cuts.empty())
+    {
+        return "";
+    }
+
+    size_t han_cnt = HelpcodeUtils::count_han_chars(word);
+    auto segments = cuts.front();
+    if (segments.size() > han_cnt)
+    {
+        segments.resize(han_cnt);
+    }
+
+    pinyin = quanpin::join_segments(segments);
+    const std::string jp = quanpin::segments_to_jianpin(segments);
+    if (!do_validate(pinyin, jp, word))
+    {
+        return "";
+    }
+
+    const std::string table = quanpin::build_table_name(segments);
+    return fmt::format("update {0} set weight = ( select MAX(weight) + 1 from {0} AS sub where sub.key = '{1}') "
+                       "where key = '{1}' and value = '{2}';",
+                       table, escape_sql_text(pinyin), escape_sql_text(word));
+}
+
+std::string ShuangpinDictionary::build_quanpin_sql_for_deleting_word(std::string pinyin, const std::string &word) const
+{
+    pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
+    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    if (cuts.empty())
+    {
+        return "";
+    }
+
+    const std::string normalized = quanpin::join_segments(cuts.front());
+    const std::string jp = quanpin::segments_to_jianpin(cuts.front());
+    if (!do_validate(normalized, jp, word))
+    {
+        return "";
+    }
+
+    return fmt::format("delete from {} where key = '{}' and value = '{}';", quanpin::build_table_name(cuts.front()),
+                       escape_sql_text(normalized), escape_sql_text(word));
+}
+
+bool ShuangpinDictionary::do_validate(string key, string jp, string value) const
+{
+    const std::string pure_key = remove_delimiters(key);
+    if (pure_key.empty())
+    {
         return false;
-    return true;
+    }
+
+    const size_t han_count = HelpcodeUtils::count_han_chars(value);
+    if (jp.size() != han_count)
+    {
+        return false;
+    }
+
+    const auto cuts = quanpin::cut_pinyin_by_mode(pure_key, "correction");
+    if (!cuts.empty())
+    {
+        return cuts.front().size() == han_count;
+    }
+
+    return pure_key.size() % 2 == 0 && pure_key.size() == han_count * 2;
 }
 
 string from_utf16(const ime_pinyin::char16 *buf, size_t len)

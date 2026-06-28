@@ -9,7 +9,6 @@
 #include <tuple>
 #include <unordered_map>
 #include <string>
-#include <fstream>
 #include <sqlite3.h>
 #include <memory>
 #include <boost/algorithm/string.hpp>
@@ -63,13 +62,9 @@ class ShuangpinDictionary
     ~ShuangpinDictionary();
 
   private:
-    std::ifstream inputFile;
-    std::string db_path;
-    sqlite3 *db = nullptr;
     std::string quanpin_db_path_;
     sqlite3 *quanpin_db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt *> quanpin_statement_cache_;
-    std::unordered_map<std::string, std::vector<std::string>> dict_map;
     int default_candicate_page_limit = 80;
 
     static std::vector<std::string> alpha_list;
@@ -86,29 +81,26 @@ class ShuangpinDictionary
         std::vector<WordItem> &filtered_list,        //
         const std::string &help_codes                //
     );
-    void filter_key_value_list(                            //
-        std::vector<WordItem> &candidate_list,             //
-        const std::vector<std::string> &pinyin_list,       //
-        const std::vector<WordItem> &key_value_weight_list //
-    );
-    std::vector<std::string> select_data(std::string sql_str);
-    std::vector<WordItem> select_complete_data(std::string sql_str);
-    std::vector<std::pair<std::string, std::string>> select_key_and_value(std::string sql_str);
-    int check_data(std::string sql_str);
-    int insert_data(std::string sql_str);
-    int update_data(std::string sql_str);
-    int delete_data(std::string sql_str);
+    std::vector<WordItem> select_complete_data(sqlite3 *target_db, const std::string &sql_str);
+    int check_data(sqlite3 *target_db, const std::string &sql_str);
+    int insert_data(sqlite3 *target_db, const std::string &sql_str);
+    int update_data(sqlite3 *target_db, const std::string &sql_str);
+    int delete_data(sqlite3 *target_db, const std::string &sql_str);
     std::vector<WordItem> query_from_quanpin_database(const std::string &pinyin_sequence,
                                                       const std::string &pinyin_segmentation);
-    std::pair<std::string, bool> build_sql(const std::string &sp_str, std::vector<std::string> &pinyin_list);
-    std::string build_sql_for_creating_word(const std::string &sp_str);
-    std::string build_sql_for_checking_word(std::string key, std::string jp, std::string value);
-    std::string build_sql_for_inserting_word(std::string key, std::string jp, std::string value);
-    std::string build_sql_for_updating_word(std::string value);
-    std::string build_sql_for_updating_word(std::string pinyin, std::string word);
-    std::string build_sql_for_deleting_word(std::string pinyin, std::string word);
-    std::string choose_tbl(const std::string &sp_str, size_t word_len);
-    bool do_validate(std::string key, std::string jp, std::string value);
+    std::string normalize_shuangpin_to_quanpin_segmentation(const std::string &pinyin) const;
+    std::string normalize_shuangpin_to_quanpin_input(const std::string &pinyin) const;
+    std::string build_quanpin_sql_for_creating_word(const std::string &pinyin) const;
+    std::string build_quanpin_sql_for_checking_word(const std::string &key,
+                                                    const std::string &jp,
+                                                    const std::string &value) const;
+    std::string build_quanpin_sql_for_inserting_word(const std::string &key,
+                                                     const std::string &jp,
+                                                     const std::string &value) const;
+    std::string build_quanpin_sql_for_updating_word(const std::string &word) const;
+    std::string build_quanpin_sql_for_updating_word(std::string pinyin, const std::string &word) const;
+    std::string build_quanpin_sql_for_deleting_word(std::string pinyin, const std::string &word) const;
+    bool do_validate(std::string key, std::string jp, std::string value) const;
 
   private:
     // Lock
@@ -203,8 +195,8 @@ class ShuangpinDictionary
     bool is_all_complete_pure_pinyin();
     std::string get_pinyin_segmentation_with_cases();
 
-    std::string get_quanpin();
-    std::string get_quanpin_seg();
+    std::string get_quanpin() const;
+    std::string get_quanpin_seg() const;
 
     void reset_state();
     void reset_cache();

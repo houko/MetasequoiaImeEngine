@@ -3,6 +3,8 @@
 //
 #include <Windows.h>
 #include <chrono>
+#include <cstdlib>
+#include <filesystem>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -11,13 +13,70 @@
 #include "fmt/base.h"
 #include "core/ime_session.h"
 #include "quanpin/quanpin_dictionary.h"
+#include "sqlite3.h"
 #include "shuangpin/shuangpin_dictionary.h"
 #include "shuangpin/shuangpin_query.h"
+#include "shuangpin/shuangpin_utils.h"
 
 using namespace std;
 
 namespace
 {
+namespace fs = std::filesystem;
+
+class ScopedLocalAppDataOverride
+{
+  public:
+    explicit ScopedLocalAppDataOverride(const std::string &suffix)
+    {
+        const char *current = std::getenv("LOCALAPPDATA");
+        original_ = current == nullptr ? "" : current;
+        if (original_.empty())
+        {
+            throw std::runtime_error("LOCALAPPDATA should be available for regression tests.");
+        }
+
+        root_ = fs::temp_directory_path() / "msime-regression" / suffix;
+        app_dir_ = root_ / "MetasequoiaImeTsf";
+        fs::remove_all(root_);
+        fs::create_directories(app_dir_);
+
+        const fs::path source_dir = fs::path(original_) / "MetasequoiaImeTsf";
+        for (const auto &file_name : {"quanpin_multi_tbl_has_jp.db", "dict_pinyin.dat", "user_dict.dat"})
+        {
+            const fs::path source = source_dir / file_name;
+            const fs::path target = app_dir_ / file_name;
+            if (!fs::exists(source))
+            {
+                throw std::runtime_error(fmt::format("Expected test dependency '{}' to exist.", source.string()));
+            }
+            fs::copy_file(source, target, fs::copy_options::overwrite_existing);
+        }
+
+        const int result = _putenv_s("LOCALAPPDATA", root_.string().c_str());
+        if (result != 0)
+        {
+            throw std::runtime_error("Failed to override LOCALAPPDATA for regression test.");
+        }
+    }
+
+    ~ScopedLocalAppDataOverride()
+    {
+        (void)_putenv_s("LOCALAPPDATA", original_.c_str());
+        std::error_code ec;
+        fs::remove_all(root_, ec);
+    }
+
+    std::string local_appdata() const
+    {
+        return root_.string();
+    }
+
+  private:
+    std::string original_;
+    fs::path root_;
+    fs::path app_dir_;
+};
 
 void expect(bool condition, const std::string &message)
 {
@@ -68,6 +127,13 @@ void print_candidates(const std::vector<WordItem> &result)
                 index, hex_dump(word), hex_dump(code), ex.what()));
         }
     }
+}
+
+const WordItem *find_candidate(const std::vector<WordItem> &result, const std::string &word)
+{
+    const auto found =
+        std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return std::get<1>(item) == word; });
+    return found == result.end() ? nullptr : &(*found);
 }
 
 void run_quanpin_query_case(QuanpinDictionary &dictionary, const std::string &query)
@@ -250,6 +316,118 @@ void test_shuangpin_dictionary_backspace()
            "Shuangpin dictionary should still have candidates after backspace.");
 }
 
+void test_shuangpin_dictionary_create_pin_delete()
+{
+    ScopedLocalAppDataOverride local_appdata("shuangpin-write-regression");
+    expect(ShuangpinUtil::get_local_appdata_path() == local_appdata.local_appdata(),
+           fmt::format("Expected shuangpin appdata path '{}', got '{}'.", local_appdata.local_appdata(),
+                       ShuangpinUtil::get_local_appdata_path()));
+
+    sqlite3 *probe_db = nullptr;
+    const std::string probe_db_path =
+        local_appdata.local_appdata() + "\\MetasequoiaImeTsf\\quanpin_multi_tbl_has_jp.db";
+    expect(sqlite3_open(probe_db_path.c_str(), &probe_db) == SQLITE_OK,
+           fmt::format("Failed to open probe db '{}'.", probe_db_path));
+    char *probe_error = nullptr;
+    expect(sqlite3_exec(probe_db,
+                        "insert into tbl_2_c (key, jp, value, weight) values ('ce''li', 'cl', '测棂', 10000);",
+                        nullptr,
+                        nullptr,
+                        &probe_error) == SQLITE_OK,
+           fmt::format("Expected probe insert to succeed, got '{}'.", probe_error == nullptr ? "" : probe_error));
+    sqlite3_free(probe_error);
+    probe_error = nullptr;
+    expect(sqlite3_exec(probe_db,
+                        "delete from tbl_2_c where key = 'ce''li' and value = '测棂';",
+                        nullptr,
+                        nullptr,
+                        &probe_error) == SQLITE_OK,
+           fmt::format("Expected probe delete to succeed, got '{}'.", probe_error == nullptr ? "" : probe_error));
+    sqlite3_free(probe_error);
+    sqlite3_close(probe_db);
+
+    ShuangpinDictionary dictionary;
+
+    const std::string raw_shuangpin = "celi";
+    const std::string segmented_shuangpin = shuangpin::segment_input(raw_shuangpin);
+    const std::string test_word = "测棂";
+
+    fmt::println("==== Shuangpin Dictionary Create/Pin/Delete ====");
+
+    // Clean up any residue from prior runs so the assertions stay deterministic.
+    dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word);
+
+    const auto before_create = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    expect(find_candidate(before_create, test_word) == nullptr,
+           fmt::format("Expected '{}' to be absent before create.", test_word));
+
+    expect(dictionary.create_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
+           "Shuangpin create_word should succeed.");
+
+    const auto after_create = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    const WordItem *created = find_candidate(after_create, test_word);
+    expect(created != nullptr, fmt::format("Expected '{}' to appear after create.", test_word));
+    const int created_weight = std::get<2>(*created);
+
+    expect(dictionary.update_weight_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
+           "Shuangpin update_weight_by_pinyin_and_word should succeed.");
+
+    const auto after_pin = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    const WordItem *pinned = find_candidate(after_pin, test_word);
+    expect(pinned != nullptr, fmt::format("Expected '{}' to remain after pin.", test_word));
+    expect(std::get<2>(*pinned) > created_weight,
+           fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, std::get<2>(*pinned)));
+
+    expect(dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
+           "Shuangpin delete_by_pinyin_and_word should succeed.");
+
+    const auto after_delete = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    expect(find_candidate(after_delete, test_word) == nullptr,
+           fmt::format("Expected '{}' to be absent after delete.", test_word));
+}
+
+void test_shuangpin_dictionary_create_pin_delete_three_syllables()
+{
+    ScopedLocalAppDataOverride local_appdata("shuangpin-write-three-syllables");
+    ShuangpinDictionary dictionary;
+
+    const std::string raw_shuangpin = "qbtmuo";
+    const std::string segmented_shuangpin = shuangpin::segment_input(raw_shuangpin);
+    const std::string test_word = "秦天朔";
+
+    fmt::println("==== Shuangpin Dictionary Create/Pin/Delete Three Syllables ====");
+
+    dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word);
+
+    const auto before_create = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    expect(find_candidate(before_create, test_word) == nullptr,
+           fmt::format("Expected '{}' to be absent before create.", test_word));
+
+    expect(dictionary.create_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
+           "Three-syllable shuangpin create_word should succeed.");
+
+    const auto after_create = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    const WordItem *created = find_candidate(after_create, test_word);
+    expect(created != nullptr, fmt::format("Expected '{}' to appear after create.", test_word));
+    const int created_weight = std::get<2>(*created);
+
+    expect(dictionary.update_weight_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
+           "Three-syllable shuangpin update_weight_by_pinyin_and_word should succeed.");
+
+    const auto after_pin = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    const WordItem *pinned = find_candidate(after_pin, test_word);
+    expect(pinned != nullptr, fmt::format("Expected '{}' to remain after pin.", test_word));
+    expect(std::get<2>(*pinned) > created_weight,
+           fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, std::get<2>(*pinned)));
+
+    expect(dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
+           "Three-syllable shuangpin delete_by_pinyin_and_word should succeed.");
+
+    const auto after_delete = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
+    expect(find_candidate(after_delete, test_word) == nullptr,
+           fmt::format("Expected '{}' to be absent after delete.", test_word));
+}
+
 void test_quanpin_query_timings()
 {
     QuanpinDictionary dictionary;
@@ -291,6 +469,8 @@ int main(int argc, char *argv[])
         test_shuangpin_manual_apostrophe();
         test_quanpin_dictionary_backspace();
         test_shuangpin_dictionary_backspace();
+        test_shuangpin_dictionary_create_pin_delete();
+        test_shuangpin_dictionary_create_pin_delete_three_syllables();
         test_shuangpin_query_manual_apostrophe();
         test_quanpin_query_timings();
         fmt::println("All tests passed.");
