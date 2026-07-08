@@ -235,11 +235,13 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
  * @param candidate_list
  * @param filtered_list
  * @param help_code
+ * @param pinyin_sequence 原始的拼音序列
  */
 void ShuangpinDictionary::filter_with_single_helpcode(           //
     const vector<ShuangpinDictionary::WordItem> &candidate_list, //
     vector<ShuangpinDictionary::WordItem> &result_list,          //
-    const string &help_code                                      //
+    const string &help_code,                                     //
+    const string &pinyin_sequence                                //
 )
 {
     if (candidate_list.empty())
@@ -316,8 +318,8 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
     result_list.insert(result_list.end(), first_helpcode_matched_list.begin(), first_helpcode_matched_list.end());
     result_list.insert(result_list.end(), last_helpcode_matched_list.begin(), last_helpcode_matched_list.end());
     /* 把原始拼音的候选列表加到辅助码模式的候选列表后面 */
-    _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence);
-    auto original_candidate_list = generateSeries(_pinyin_sequence, _pinyin_segmentation);
+    const std::string original_segmentation = ShuangpinUtil::pinyin_segmentation(pinyin_sequence);
+    auto original_candidate_list = generateSeries(pinyin_sequence, original_segmentation);
     result_list.insert(result_list.end(), original_candidate_list.begin(), original_candidate_list.end());
     /* 把剩下的候选列表加到辅助码模式的候选列表后面 */
     result_list.insert(result_list.end(), left_helpcode_matched_list.begin(), left_helpcode_matched_list.end());
@@ -423,7 +425,8 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_with_helpcod
         filter_with_single_helpcode( //
             candidate_list,          //
             result_list,             //
-            help_codes               //
+            help_codes,              //
+            pinyin_sequence          //
         );
         _cached_buffer_sgl.insert(pinyin_sequence, result_list);
     }

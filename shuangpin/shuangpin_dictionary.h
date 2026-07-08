@@ -74,7 +74,8 @@ class ShuangpinDictionary
     void filter_with_single_helpcode(                //
         const std::vector<WordItem> &candidate_list, //
         std::vector<WordItem> &filtered_list,        //
-        const std::string &help_code                 //
+        const std::string &help_code,                //
+        const std::string &pinyin_sequence           //
     );
     void filter_with_double_helpcodes(               //
         const std::vector<WordItem> &candidate_list, //
