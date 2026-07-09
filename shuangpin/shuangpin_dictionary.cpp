@@ -775,7 +775,11 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     try
     {
         const auto flat_items =
-            quanpin::query_segments_flat(segments, quanpin_db_, quanpin_statement_cache_, default_candicate_page_limit);
+            quanpin::query_segments_flat(segments,
+                                         quanpin_db_,
+                                         quanpin_statement_cache_,
+                                         default_candicate_page_limit,
+                                         quanpin::QuerySource::Shuangpin);
         candidate_list.reserve(flat_items.size());
         for (const auto &[word, weight] : flat_items)
         {

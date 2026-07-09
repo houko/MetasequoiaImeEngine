@@ -86,6 +86,96 @@ bool is_pure_jianpin(const Segments &segments)
                        [](const std::string &segment) { return segment.size() == 1; });
 }
 
+bool is_shuangpin_initial_token(const std::string &segment)
+{
+    return segment == "zh" || segment == "ch" || segment == "sh";
+}
+
+bool needs_mixed_jianpin_query(const Segments &segments, QuerySource source)
+{
+    if (segments.size() <= 1)
+    {
+        return false;
+    }
+
+    return std::any_of(segments.begin(), segments.end() - 1, [source](const std::string &segment) {
+        if (segment.size() == 1)
+        {
+            return true;
+        }
+        return source == QuerySource::Shuangpin && is_shuangpin_initial_token(segment);
+    });
+}
+
+struct KeyedQueryItem
+{
+    std::string key;
+    std::string value;
+    int weight = 0;
+};
+
+std::string extract_initial_token(const std::string &segment)
+{
+    if (segment.size() >= 2)
+    {
+        const auto prefix = segment.substr(0, 2);
+        if (prefix == "zh" || prefix == "ch" || prefix == "sh")
+        {
+            return prefix;
+        }
+    }
+    return segment.empty() ? "" : segment.substr(0, 1);
+}
+
+bool matches_mixed_segments(const std::string &key, const Segments &segments, QuerySource source)
+{
+    const auto key_segments = split(key, '\'');
+    if (key_segments.size() != segments.size())
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        const auto &expected = segments[i];
+        const auto &actual = key_segments[i];
+
+        if (expected.empty() || actual.empty())
+        {
+            return false;
+        }
+
+        const bool is_strict_shuangpin_initial = source == QuerySource::Shuangpin && is_shuangpin_initial_token(expected);
+        if (expected.size() == 1 || is_strict_shuangpin_initial)
+        {
+            if (source == QuerySource::Shuangpin)
+            {
+                if (extract_initial_token(actual) != expected)
+                {
+                    return false;
+                }
+            }
+            else if (actual.front() != expected.front())
+            {
+                return false;
+            }
+            continue;
+        }
+
+        if (actual != expected)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+int build_mixed_jianpin_scan_limit(int limit)
+{
+    return std::max(limit * 16, 128);
+}
+
 bool can_match_exact_key(const Segments &segments)
 {
     if (segments.empty())
@@ -259,7 +349,100 @@ std::vector<QueryItem> run_query(sqlite3 *db,
     return rows;
 }
 
-std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, int limit)
+std::vector<KeyedQueryItem> run_keyed_query(sqlite3 *db, const std::string &sql, const std::string &value, int limit)
+{
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        return {};
+    }
+
+    sqlite3_bind_text(stmt, 1, value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+
+    std::vector<KeyedQueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const unsigned char *key = sqlite3_column_text(stmt, 0);
+        const unsigned char *value_text = sqlite3_column_text(stmt, 1);
+        const int weight = sqlite3_column_int(stmt, 2);
+        rows.push_back(KeyedQueryItem{
+            key == nullptr ? "" : reinterpret_cast<const char *>(key),
+            value_text == nullptr ? "" : reinterpret_cast<const char *>(value_text),
+            weight,
+        });
+    }
+    sqlite3_finalize(stmt);
+    return rows;
+}
+
+std::vector<KeyedQueryItem> run_keyed_query(sqlite3 *db,
+                                            std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                            const std::string &sql,
+                                            const std::string &value,
+                                            int limit)
+{
+    sqlite3_stmt *stmt = nullptr;
+    const auto found = statement_cache.find(sql);
+    if (found != statement_cache.end())
+    {
+        stmt = found->second;
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    else
+    {
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            return {};
+        }
+        statement_cache.emplace(sql, stmt);
+    }
+
+    sqlite3_bind_text(stmt, 1, value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+
+    std::vector<KeyedQueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const unsigned char *key = sqlite3_column_text(stmt, 0);
+        const unsigned char *value_text = sqlite3_column_text(stmt, 1);
+        const int weight = sqlite3_column_int(stmt, 2);
+        rows.push_back(KeyedQueryItem{
+            key == nullptr ? "" : reinterpret_cast<const char *>(key),
+            value_text == nullptr ? "" : reinterpret_cast<const char *>(value_text),
+            weight,
+        });
+    }
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return rows;
+}
+
+std::vector<QueryItem> filter_mixed_jianpin_rows(const std::vector<KeyedQueryItem> &rows,
+                                                 const Segments &segments,
+                                                 int limit,
+                                                 QuerySource source)
+{
+    std::vector<QueryItem> matched;
+    matched.reserve(static_cast<size_t>(std::min(limit, static_cast<int>(rows.size()))));
+    for (const auto &row : rows)
+    {
+        if (!matches_mixed_segments(row.key, segments, source))
+        {
+            continue;
+        }
+
+        matched.emplace_back(row.value, row.weight);
+        if (static_cast<int>(matched.size()) >= limit)
+        {
+            break;
+        }
+    }
+    return matched;
+}
+
+std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, int limit, QuerySource source)
 {
     const auto table = build_table_name_impl(segments);
     if (table.empty())
@@ -269,6 +452,8 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
 
     const auto key = join_segments(segments);
     const auto jp = segments_to_jianpin_impl(segments);
+    const auto mixed_query_limit = build_mixed_jianpin_scan_limit(limit);
+    const auto needs_mixed_query = needs_mixed_jianpin_query(segments, source);
     const auto key_prefix_pattern = build_key_like_pattern(segments);
     const auto key_prefix = key_prefix_pattern.substr(0, key_prefix_pattern.size() - 1);
     const auto key_prefix_upper_bound = build_key_prefix_upper_bound(key_prefix);
@@ -293,6 +478,18 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
         return rows;
     }
 
+    if (needs_mixed_query)
+    {
+        const auto mixed_sql =
+            "SELECT \"key\", \"value\", \"weight\" FROM \"" + table + "\" WHERE \"jp\" = ? ORDER BY \"weight\" DESC LIMIT ?";
+        rows = filter_mixed_jianpin_rows(run_keyed_query(db, mixed_sql, jp, mixed_query_limit), segments, limit,
+                                         source);
+        if (!rows.empty())
+        {
+            return rows;
+        }
+    }
+
     if (!is_pure_jianpin(segments))
     {
         return {};
@@ -306,7 +503,8 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db, const Segments &segments, i
 std::vector<QueryItem> query_single_cut(sqlite3 *db,
                                         std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
                                         const Segments &segments,
-                                        int limit)
+                                        int limit,
+                                        QuerySource source)
 {
     const auto table = build_table_name_impl(segments);
     if (table.empty())
@@ -316,6 +514,8 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db,
 
     const auto key = join_segments(segments);
     const auto jp = segments_to_jianpin_impl(segments);
+    const auto mixed_query_limit = build_mixed_jianpin_scan_limit(limit);
+    const auto needs_mixed_query = needs_mixed_jianpin_query(segments, source);
     const auto key_prefix_pattern = build_key_like_pattern(segments);
     const auto key_prefix = key_prefix_pattern.substr(0, key_prefix_pattern.size() - 1);
     const auto key_prefix_upper_bound = build_key_prefix_upper_bound(key_prefix);
@@ -338,6 +538,20 @@ std::vector<QueryItem> query_single_cut(sqlite3 *db,
     if (!rows.empty())
     {
         return rows;
+    }
+
+    if (needs_mixed_query)
+    {
+        const auto mixed_sql =
+            "SELECT \"key\", \"value\", \"weight\" FROM \"" + table + "\" WHERE \"jp\" = ? ORDER BY \"weight\" DESC LIMIT ?";
+        rows = filter_mixed_jianpin_rows(run_keyed_query(db, statement_cache, mixed_sql, jp, mixed_query_limit),
+                                         segments,
+                                         limit,
+                                         source);
+        if (!rows.empty())
+        {
+            return rows;
+        }
     }
 
     if (!is_pure_jianpin(segments))
@@ -463,8 +677,8 @@ void warm_up(sqlite3 *db, std::unordered_map<std::string, sqlite3_stmt *> &state
     }
 
     // Warm the most common single-syllable prefixes to hide first-query setup costs.
-    (void)query_single_cut(db, statement_cache, Segments{"n"}, 1);
-    (void)query_single_cut(db, statement_cache, Segments{"ni"}, 1);
+    (void)query_single_cut(db, statement_cache, Segments{"n"}, 1, QuerySource::Quanpin);
+    (void)query_single_cut(db, statement_cache, Segments{"ni"}, 1, QuerySource::Quanpin);
 }
 
 QueryResult query_words(const std::string &pinyin, const std::string &db_path, const std::string &mode, int limit)
@@ -483,13 +697,13 @@ QueryResult query_words(const std::string &pinyin, const std::string &db_path, c
             segments,
             join_segments(segments),
             build_table_name(segments),
-            query_single_cut(db.get(), segments, limit),
+            query_single_cut(db.get(), segments, limit, QuerySource::Quanpin),
         });
     }
     return result;
 }
 
-QueryResult query_segments(const Segments &segments, const std::string &db_path, int limit)
+QueryResult query_segments(const Segments &segments, const std::string &db_path, int limit, QuerySource source)
 {
     QueryResult result{join_segments(segments), "precut", {}};
     if (segments.empty())
@@ -502,7 +716,7 @@ QueryResult query_segments(const Segments &segments, const std::string &db_path,
         segments,
         join_segments(segments),
         build_table_name(segments),
-        query_single_cut(db.get(), segments, limit),
+        query_single_cut(db.get(), segments, limit, source),
     });
     return result;
 }
@@ -535,9 +749,10 @@ std::vector<QueryItem> query_words_flat(const std::string &pinyin, const std::st
     return items;
 }
 
-std::vector<QueryItem> query_segments_flat(const Segments &segments, const std::string &db_path, int limit)
+std::vector<QueryItem> query_segments_flat(const Segments &segments, const std::string &db_path, int limit,
+                                           QuerySource source)
 {
-    const auto result = query_segments(segments, db_path, limit);
+    const auto result = query_segments(segments, db_path, limit, source);
     std::vector<QueryItem> items;
     std::unordered_set<std::string> seen;
     for (const auto &entry : result.results)
@@ -565,7 +780,8 @@ std::vector<QueryItem> query_segments_flat(const Segments &segments, const std::
 std::vector<QueryItem> query_segments_flat(const Segments &segments,
                                            sqlite3 *db,
                                            std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
-                                           int limit)
+                                           int limit,
+                                           QuerySource source)
 {
     if (db == nullptr || segments.empty())
     {
@@ -574,7 +790,7 @@ std::vector<QueryItem> query_segments_flat(const Segments &segments,
 
     std::vector<QueryItem> items;
     std::unordered_set<std::string> seen;
-    for (const auto &item : query_single_cut(db, statement_cache, segments, limit))
+    for (const auto &item : query_single_cut(db, statement_cache, segments, limit, source))
     {
         if (seen.insert(item.first).second)
         {
