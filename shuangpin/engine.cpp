@@ -3,12 +3,125 @@
 #include "shuangpin_query.h"
 #include "shuangpin_utils.h"
 
+#include <optional>
+
 namespace
 {
+struct HelpcodeQuery
+{
+    std::string base_raw_input;
+    std::string base_pure_input;
+    std::string base_segmentation;
+    std::string help_codes;
+};
+
+std::string trim_trailing_letters_preserve_delimiters(const std::string &raw_input, size_t letter_count)
+{
+    if (letter_count == 0 || raw_input.empty())
+    {
+        return raw_input;
+    }
+
+    size_t remaining = letter_count;
+    size_t pos = raw_input.size();
+    while (pos > 0)
+    {
+        --pos;
+        if (raw_input[pos] == '\'')
+        {
+            continue;
+        }
+
+        --remaining;
+        if (remaining == 0)
+        {
+            return raw_input.substr(0, pos);
+        }
+    }
+
+    return {};
+}
+
+bool has_manual_delimiters(const std::string &raw_input)
+{
+    return raw_input.find('\'') != std::string::npos;
+}
+
+bool segmented_parts_are_all_two_chars(const std::string &segmentation)
+{
+    if (segmentation.empty())
+    {
+        return false;
+    }
+
+    size_t start = 0;
+    while (start <= segmentation.size())
+    {
+        const size_t separator = segmentation.find('\'', start);
+        const std::string part =
+            separator == std::string::npos ? segmentation.substr(start) : segmentation.substr(start, separator - start);
+        if (part.size() != 2)
+        {
+            return false;
+        }
+        if (separator == std::string::npos)
+        {
+            break;
+        }
+        start = separator + 1;
+    }
+    return true;
+}
+
 std::vector<WordItem> query_normal(ShuangpinDictionary &dictionary, const QueryRequest &request)
 {
     const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
     return dictionary.generateSeries(pure_input, shuangpin::segment_input(request.raw_input), request.raw_input);
+}
+
+std::optional<HelpcodeQuery> build_full_helpcode_query(const std::string &raw_input,
+                                                       const std::string &pure_input,
+                                                       const std::string &pure_input_with_cases)
+{
+    if (!ShuangpinUtil::IsFullHelpMode(pure_input_with_cases))
+    {
+        return std::nullopt;
+    }
+
+    HelpcodeQuery query;
+    query.base_raw_input = trim_trailing_letters_preserve_delimiters(raw_input, 2);
+    query.base_pure_input = shuangpin::remove_manual_delimiters(query.base_raw_input);
+    query.base_segmentation = shuangpin::segment_input(query.base_raw_input);
+    if (has_manual_delimiters(raw_input) && !segmented_parts_are_all_two_chars(query.base_segmentation))
+    {
+        return std::nullopt;
+    }
+    query.help_codes = pure_input.substr(pure_input.size() - 2, 2);
+    return query;
+}
+
+std::optional<HelpcodeQuery> build_single_helpcode_query(const std::string &raw_input, const std::string &pure_input)
+{
+    if (pure_input.size() <= 1 || pure_input.size() % 2 == 0)
+    {
+        return std::nullopt;
+    }
+
+    HelpcodeQuery query;
+    query.base_raw_input = trim_trailing_letters_preserve_delimiters(raw_input, 1);
+    query.base_pure_input = shuangpin::remove_manual_delimiters(query.base_raw_input);
+    query.base_segmentation = shuangpin::segment_input(query.base_raw_input);
+    if (has_manual_delimiters(raw_input) && !segmented_parts_are_all_two_chars(query.base_segmentation))
+    {
+        return std::nullopt;
+    }
+    if (!ShuangpinUtil::is_all_complete_pinyin(query.base_pure_input, query.base_segmentation))
+    {
+        return std::nullopt;
+    }
+
+    query.help_codes = pure_input.substr(pure_input.size() - 1, 1);
+    return query;
 }
 } // namespace
 
@@ -33,25 +146,21 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
     if (request.enable_shuangpin_helpcode)
     {
         // 双码辅助
-        if (ShuangpinUtil::IsFullHelpMode(pure_input_with_cases))
+        if (const auto full_helpcode = build_full_helpcode_query(raw_input, pure_input, pure_input_with_cases))
         {
-            const std::string base_raw_input = pure_input.substr(0, pure_input.size() - 2);
-            const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
-            const std::string help_codes = pure_input.substr(pure_input.size() - 2, 2);
-            return dictionary_.generate_with_helpcodes(base_raw_input, base_raw_segmentation, raw_input, help_codes);
+            return dictionary_.generate_with_helpcodes(full_helpcode->base_pure_input,
+                                                       full_helpcode->base_segmentation,
+                                                       raw_input,
+                                                       full_helpcode->help_codes);
         }
 
         // 单码辅助
-        if (pure_input.size() % 2 == 1 && pure_input.size() > 1)
+        if (const auto single_helpcode = build_single_helpcode_query(raw_input, pure_input))
         {
-            const std::string base_raw_input = pure_input.substr(0, pure_input.size() - 1);
-            const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
-            if (ShuangpinUtil::is_all_complete_pinyin(base_raw_input, base_raw_segmentation))
-            {
-                const std::string help_codes = pure_input.substr(pure_input.size() - 1, 1);
-                return dictionary_.generate_with_helpcodes(base_raw_input, base_raw_segmentation, raw_input,
-                                                           help_codes);
-            }
+            return dictionary_.generate_with_helpcodes(single_helpcode->base_pure_input,
+                                                       single_helpcode->base_segmentation,
+                                                       raw_input,
+                                                       single_helpcode->help_codes);
         }
 
         // 不满足辅助码条件，单独查询，比如，cls -> c'ls，也就直接走下面的 query_normal 了
