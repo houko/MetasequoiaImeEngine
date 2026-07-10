@@ -30,11 +30,13 @@ class ShuangpinDictionary
 
     std::vector<WordItem> generate(            //
         const std::string &pinyin_sequence,    //
-        const std::string &pinyin_segmentation //
+        const std::string &pinyin_segmentation, //
+        const std::string &cache_key = ""      //
     );
     std::vector<WordItem> generateSeries(      //
         const std::string &pinyin_sequence,    //
-        const std::string &pinyin_segmentation //
+        const std::string &pinyin_segmentation, //
+        const std::string &cache_key = ""      //
     );
     std::vector<WordItem> generate_with_helpcodes(   //
         const std::string &pure_pinyin,              //

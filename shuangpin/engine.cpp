@@ -8,7 +8,7 @@ namespace
 std::vector<WordItem> query_normal(ShuangpinDictionary &dictionary, const QueryRequest &request)
 {
     const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
-    return dictionary.generateSeries(pure_input, shuangpin::segment_input(request.raw_input));
+    return dictionary.generateSeries(pure_input, shuangpin::segment_input(request.raw_input), request.raw_input);
 }
 } // namespace
 

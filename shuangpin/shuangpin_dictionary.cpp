@@ -116,7 +116,8 @@ ShuangpinDictionary::ShuangpinDictionary()
  */
 vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate( //
     const string &pinyin_sequence,                                   //
-    const string &pinyin_segmentation                                //
+    const string &pinyin_segmentation,                               //
+    const string &cache_key                                          //
 )
 {
     // std::shared_lock lock(mutex_);
@@ -132,15 +133,16 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate( //
     }
     else
     {
+        const std::string effective_cache_key = cache_key.empty() ? pinyin_sequence : cache_key;
         // Check cache first
-        if (_cached_buffer.get(pinyin_sequence))
+        if (_cached_buffer.get(effective_cache_key))
         {
-            candidate_list = _cached_buffer.get(pinyin_sequence).value();
+            candidate_list = _cached_buffer.get(effective_cache_key).value();
             return candidate_list;
         }
 
         candidate_list = query_from_quanpin_database(pinyin_sequence, pinyin_segmentation);
-        _cached_buffer.insert(pinyin_sequence, candidate_list);
+        _cached_buffer.insert(effective_cache_key, candidate_list);
     }
     return candidate_list;
 }
@@ -154,7 +156,8 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate( //
  */
 vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
     const string &pinyin_sequence,                                         //
-    const string &pinyin_segmentation                                      //
+    const string &pinyin_segmentation,                                     //
+    const string &cache_key                                                //
 )
 {
     vector<ShuangpinDictionary::WordItem> candidate_list;
@@ -169,15 +172,17 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
     }
     else
     {
+        const std::string effective_cache_key = cache_key.empty() ? pinyin_sequence : cache_key;
         // 先看一下缓存里有没有
-        if (_cached_buffer_series.get(pinyin_sequence))
+        if (_cached_buffer_series.get(effective_cache_key))
         {
-            candidate_list = _cached_buffer_series.get(pinyin_sequence).value();
+            candidate_list = _cached_buffer_series.get(effective_cache_key).value();
             return candidate_list;
         }
 
         // 查询当前的拼音严格对应的数据
-        vector<ShuangpinDictionary::WordItem> cur_pinyin_cand = generate(pinyin_sequence, pinyin_segmentation);
+        vector<ShuangpinDictionary::WordItem> cur_pinyin_cand =
+            generate(pinyin_sequence, pinyin_segmentation, effective_cache_key);
         if (cur_pinyin_cand.size() > 0)
         {
             candidate_list.insert(candidate_list.end(), cur_pinyin_cand.begin(), cur_pinyin_cand.end());
@@ -214,7 +219,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
             }
         }
         /* 缓存起来 */
-        _cached_buffer_series.insert(pinyin_sequence, candidate_list);
+        _cached_buffer_series.insert(effective_cache_key, candidate_list);
     }
 
     return candidate_list;
