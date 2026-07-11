@@ -262,7 +262,7 @@ std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &
     }
 
     const auto exists =
-        std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return std::get<1>(item) == sentence; });
+        std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return item.word == sentence; });
     if (exists == result.end())
     {
         result.emplace_back(segmentation.empty() ? raw_input : segmentation, sentence, 1);
@@ -293,7 +293,7 @@ void QuanpinDictionary::append_unique_words(std::vector<WordItem> &result, const
     for (const auto &item : extra)
     {
         const auto exists = std::find_if(result.begin(), result.end(),
-                                         [&](const WordItem &existing) { return std::get<1>(existing) == std::get<1>(item); });
+                                         [&](const WordItem &existing) { return existing.word == item.word; });
         if (exists == result.end())
         {
             result.push_back(item);
@@ -359,23 +359,23 @@ int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, co
     {
         auto list = cached.value();
         const auto exists =
-            std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return std::get<1>(item) == word; });
+            std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
         if (exists == list.end())
         {
             if (list.empty())
             {
-                list.push_back(std::make_tuple(pinyin, word, 1));
+                list.emplace_back(pinyin, word, 1, CandidateSource::CloudSuggestion);
             }
             else
             {
-                list.insert(list.begin() + 1, std::make_tuple(pinyin, word, 1));
+                list.insert(list.begin() + 1, WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion));
             }
         }
         series_cache_.insert(pinyin, list);
         return OK;
     }
 
-    series_cache_.insert(pinyin, std::vector<WordItem>{std::make_tuple(pinyin, word, 1)});
+    series_cache_.insert(pinyin, std::vector<WordItem>{WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion)});
     return OK;
 }
 

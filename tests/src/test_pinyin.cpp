@@ -115,7 +115,10 @@ void print_candidates(const std::vector<WordItem> &result)
 {
     for (size_t index = 0; index < result.size(); ++index)
     {
-        const auto &[code, word, weight] = result[index];
+        const auto &item = result[index];
+        const auto &code = item.pinyin;
+        const auto &word = item.word;
+        const auto weight = item.weight;
         try
         {
             fmt::println("Candidate #{}: {} [{}] ({})", index, word, code, weight);
@@ -132,7 +135,7 @@ void print_candidates(const std::vector<WordItem> &result)
 const WordItem *find_candidate(const std::vector<WordItem> &result, const std::string &word)
 {
     const auto found =
-        std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return std::get<1>(item) == word; });
+        std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return item.word == word; });
     return found == result.end() ? nullptr : &(*found);
 }
 
@@ -367,7 +370,7 @@ void test_shuangpin_dictionary_create_pin_delete()
     const auto after_create = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
     const WordItem *created = find_candidate(after_create, test_word);
     expect(created != nullptr, fmt::format("Expected '{}' to appear after create.", test_word));
-    const int created_weight = std::get<2>(*created);
+    const int created_weight = created->weight;
 
     expect(dictionary.update_weight_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
            "Shuangpin update_weight_by_pinyin_and_word should succeed.");
@@ -375,8 +378,8 @@ void test_shuangpin_dictionary_create_pin_delete()
     const auto after_pin = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
     const WordItem *pinned = find_candidate(after_pin, test_word);
     expect(pinned != nullptr, fmt::format("Expected '{}' to remain after pin.", test_word));
-    expect(std::get<2>(*pinned) > created_weight,
-           fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, std::get<2>(*pinned)));
+    expect(pinned->weight > created_weight,
+           fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, pinned->weight));
 
     expect(dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
            "Shuangpin delete_by_pinyin_and_word should succeed.");
@@ -409,7 +412,7 @@ void test_shuangpin_dictionary_create_pin_delete_three_syllables()
     const auto after_create = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
     const WordItem *created = find_candidate(after_create, test_word);
     expect(created != nullptr, fmt::format("Expected '{}' to appear after create.", test_word));
-    const int created_weight = std::get<2>(*created);
+    const int created_weight = created->weight;
 
     expect(dictionary.update_weight_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
            "Three-syllable shuangpin update_weight_by_pinyin_and_word should succeed.");
@@ -417,8 +420,8 @@ void test_shuangpin_dictionary_create_pin_delete_three_syllables()
     const auto after_pin = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
     const WordItem *pinned = find_candidate(after_pin, test_word);
     expect(pinned != nullptr, fmt::format("Expected '{}' to remain after pin.", test_word));
-    expect(std::get<2>(*pinned) > created_weight,
-           fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, std::get<2>(*pinned)));
+    expect(pinned->weight > created_weight,
+           fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, pinned->weight));
 
     expect(dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
            "Three-syllable shuangpin delete_by_pinyin_and_word should succeed.");

@@ -34,9 +34,9 @@ void testGenerate()
     request.valid = true;
     std::vector<WordItem> result = engine.query(request);
 
-    for (const auto &[pinyin, word, weight] : result)
+    for (const auto &item : result)
     {
-        fmt::println("Word: {}", word);
+        fmt::println("Word: {}", item.word);
     }
 }
 

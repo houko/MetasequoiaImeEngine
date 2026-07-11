@@ -1,12 +1,12 @@
 #pragma once
 
 #include "../common/cache.h"
+#include "../core/word_item.h"
 #include "../quanpin/quanpin_query.h"
 #include <windows.h>
 #include <shared_mutex>
 #include <array>
 #include <vector>
-#include <tuple>
 #include <unordered_map>
 #include <string>
 #include <sqlite3.h>
@@ -16,14 +16,7 @@
 class ShuangpinDictionary
 {
   public:
-    /**
-     * @brief
-     *
-     * first: pinyin
-     * second: word
-     * third: weight
-     */
-    using WordItem = std::tuple<std::string, std::string, int>;
+    using WordItem = ::WordItem;
 
     static const int OK = 0;
     static const int ERROR_CODE = -1;

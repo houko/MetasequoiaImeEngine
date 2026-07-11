@@ -195,7 +195,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
                 string res = search_sentence_from_ime_engine(quanpin_str);
                 if (res.size() > 0)
                 {
-                    candidate_list.push_back(make_tuple(_pinyin_sequence, res, 1));
+                    candidate_list.emplace_back(_pinyin_sequence, res, 1, CandidateSource::Fallback);
                 }
             }
         }
@@ -257,7 +257,7 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
 
     for (const auto &cand : candidate_list)
     {
-        string cur_word = std::get<1>(cand);
+        string cur_word = cand.word;
         int count = ShuangpinUtil::count_utf8_chars(cur_word);
         bool is_first_helpcode_matched = false;
         bool is_last_helpcode_matched = false;
@@ -355,7 +355,7 @@ void ShuangpinDictionary::filter_with_double_helpcodes(               //
 
     for (const auto &cand : candidate_list)
     {
-        string cur_word = std::get<1>(cand);
+        string cur_word = cand.word;
         int count = ShuangpinUtil::count_utf8_chars(cur_word);
         if (count == 1)
         { /* 单字 */
@@ -486,7 +486,7 @@ void ShuangpinDictionary::generate_for_single_char(vector<ShuangpinDictionary::W
     for (size_t i = 0; i < s.length();)
     {
         size_t cplen = ShuangpinUtil::get_first_char_size(s.substr(i, s.size() - i));
-        candidate_list.push_back(make_tuple(code, s.substr(i, cplen), 1));
+        candidate_list.emplace_back(code, s.substr(i, cplen), 1, CandidateSource::Fallback);
         i += cplen;
     }
 }
@@ -815,11 +815,10 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(
     }
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        candidateList.push_back(make_tuple(                                       //
+        candidateList.emplace_back(                                               //
             string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))), // key
             string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))), // value
-            sqlite3_column_int(stmt, 3))                                          // weight
-        );
+            sqlite3_column_int(stmt, 3));                                         // weight
     }
     sqlite3_finalize(stmt);
     return candidateList;
@@ -1064,17 +1063,18 @@ int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &
         auto list = opt.value();
         if (list.size() >= 1)
         {
-            list.insert(list.begin() + 1, make_tuple(pinyin, word, 1));
+            list.insert(list.begin() + 1, WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion));
         }
         else
         {
-            list.push_back(make_tuple(pinyin, word, 1));
+            list.emplace_back(pinyin, word, 1, CandidateSource::CloudSuggestion);
         }
         _cached_buffer_series.insert(pinyin, list);
     }
     else
     {
-        _cached_buffer_series.insert(pinyin, vector<WordItem>{make_tuple(pinyin, word, 1)});
+        _cached_buffer_series.insert(pinyin,
+                                     vector<WordItem>{WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion)});
     }
     return 0;
 }
@@ -1086,16 +1086,16 @@ int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string 
         {
             auto list = opt.value();
             const auto exists =
-                std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return std::get<1>(item) == word; });
+                std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
             if (exists == list.end())
             {
                 if (list.size() >= 1)
                 {
-                    list.insert(list.begin() + 1, make_tuple(pinyin, word, 1));
+                    list.insert(list.begin() + 1, WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion));
                 }
                 else
                 {
-                    list.push_back(make_tuple(pinyin, word, 1));
+                    list.emplace_back(pinyin, word, 1, CandidateSource::CloudSuggestion);
                 }
             }
             cache.insert(pinyin, list);

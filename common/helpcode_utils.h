@@ -35,7 +35,7 @@ std::vector<TWordItem> reorder_candidates_with_single_helpcode(const std::vector
 
     for (const auto &cand : candidate_list)
     {
-        const std::string &word = std::get<1>(cand);
+        const std::string &word = cand.word;
         bool is_first_helpcode_matched = false;
         bool is_last_helpcode_matched = false;
 
@@ -114,7 +114,7 @@ std::vector<TWordItem> filter_candidates_with_double_helpcodes(const std::vector
 
     for (const auto &cand : candidate_list)
     {
-        const std::string &word = std::get<1>(cand);
+        const std::string &word = cand.word;
         if (count_han_chars(word) == 1)
         {
             if (keymap.count(word) && keymap.at(word)[0] == help_codes[0] && keymap.at(word)[1] == help_codes[1])
