@@ -42,7 +42,7 @@ class ScopedLocalAppDataOverride
         fs::create_directories(app_dir_);
 
         const fs::path source_dir = fs::path(original_) / "MetasequoiaImeTsf";
-        for (const auto &file_name : {"quanpin_multi_tbl_has_jp.db", "dict_pinyin.dat", "user_dict.dat"})
+        for (const auto &file_name : {"msime.db", "dict_pinyin.dat", "user_dict.dat"})
         {
             const fs::path source = source_dir / file_name;
             const fs::path target = app_dir_ / file_name;
@@ -328,7 +328,7 @@ void test_shuangpin_dictionary_create_pin_delete()
 
     sqlite3 *probe_db = nullptr;
     const std::string probe_db_path =
-        local_appdata.local_appdata() + "\\MetasequoiaImeTsf\\quanpin_multi_tbl_has_jp.db";
+        local_appdata.local_appdata() + "\\MetasequoiaImeTsf\\msime.db";
     expect(sqlite3_open(probe_db_path.c_str(), &probe_db) == SQLITE_OK,
            fmt::format("Failed to open probe db '{}'.", probe_db_path));
     char *probe_error = nullptr;

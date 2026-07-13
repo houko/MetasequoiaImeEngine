@@ -663,7 +663,7 @@ std::string segments_to_jianpin(const Segments &segments)
 
 std::string get_default_db_path()
 {
-    return shuangpin::get_local_appdata_path() + "\\" + shuangpin::get_app_name() + "\\quanpin_multi_tbl_has_jp.db";
+    return shuangpin::get_local_appdata_path() + "\\" + shuangpin::get_app_name() + "\\msime.db";
 }
 
 void warm_up(sqlite3 *db, std::unordered_map<std::string, sqlite3_stmt *> &statement_cache)
