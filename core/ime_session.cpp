@@ -1,6 +1,7 @@
 #include "ime_session.h"
 #include "../schemes/quanpin_scheme.h"
 #include "../schemes/shuangpin_scheme.h"
+#include "../schemes/wubi_scheme.h"
 #include <stdexcept>
 
 ImeSession::ImeSession(SchemeType scheme_type) : scheme_(create_scheme(scheme_type))
@@ -64,6 +65,23 @@ void ImeSession::replace_quanpin_raw_input(const std::string &raw_input, const s
     refresh_candidates();
 }
 
+void ImeSession::replace_wubi_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    if (scheme_->type() != SchemeType::Wubi)
+    {
+        return;
+    }
+
+    auto *wubi_scheme = dynamic_cast<WubiScheme *>(scheme_.get());
+    if (!wubi_scheme)
+    {
+        return;
+    }
+
+    wubi_scheme->set_raw_input(raw_input, raw_input_with_cases);
+    refresh_candidates();
+}
+
 void ImeSession::reset()
 {
     scheme_->reset();
@@ -83,7 +101,8 @@ int ImeSession::create_word(std::string pinyin, std::string word)
 
 int ImeSession::update_weight_by_pinyin_and_word(std::string pinyin, std::string word)
 {
-    return provider_registry_.update_weight_by_pinyin_and_word(current_scheme_type(), std::move(pinyin), std::move(word));
+    return provider_registry_.update_weight_by_pinyin_and_word(current_scheme_type(), std::move(pinyin),
+                                                               std::move(word));
 }
 
 int ImeSession::delete_by_pinyin_and_word(std::string pinyin, std::string word)
@@ -146,7 +165,7 @@ std::unique_ptr<IInputScheme> ImeSession::create_scheme(SchemeType scheme_type) 
     case SchemeType::Quanpin:
         return std::make_unique<QuanpinScheme>();
     case SchemeType::Wubi:
-        throw std::runtime_error("Wubi scheme is not implemented yet.");
+        return std::make_unique<WubiScheme>();
     default:
         throw std::runtime_error("Unknown scheme type.");
     }

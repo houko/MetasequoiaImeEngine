@@ -9,7 +9,7 @@ ICandidateProvider &ProviderRegistry::resolve(SchemeType scheme_type)
     case SchemeType::Shuangpin:
         return pinyin_provider_;
     case SchemeType::Wubi:
-        throw std::runtime_error("Wubi provider is not implemented yet.");
+        return wubi_provider_;
     default:
         throw std::runtime_error("Unknown scheme type.");
     }
@@ -24,7 +24,8 @@ void ProviderRegistry::reset_cache(SchemeType scheme_type)
         pinyin_provider_.reset_cache();
         return;
     case SchemeType::Wubi:
-        throw std::runtime_error("Wubi provider is not implemented yet.");
+        wubi_provider_.reset_cache();
+        return;
     default:
         throw std::runtime_error("Unknown scheme type.");
     }
@@ -45,7 +46,8 @@ int ProviderRegistry::delete_by_pinyin_and_word(SchemeType scheme_type, std::str
     return resolve(scheme_type).delete_by_pinyin_and_word(scheme_type, std::move(pinyin), std::move(word));
 }
 
-int ProviderRegistry::cache_dynamic_candidate(SchemeType scheme_type, const std::string &pinyin, const std::string &word)
+int ProviderRegistry::cache_dynamic_candidate(SchemeType scheme_type, const std::string &pinyin,
+                                              const std::string &word)
 {
     return resolve(scheme_type).cache_dynamic_candidate(scheme_type, pinyin, word);
 }

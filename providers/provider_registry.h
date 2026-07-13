@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pinyin_candidate_provider.h"
+#include "wubi_candidate_provider.h"
 #include "../core/scheme_type.h"
 #include <string>
 
@@ -17,4 +18,5 @@ class ProviderRegistry
 
   private:
     PinyinCandidateProvider pinyin_provider_;
+    WubiCandidateProvider wubi_provider_;
 };
