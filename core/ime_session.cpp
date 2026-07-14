@@ -4,7 +4,8 @@
 #include "../schemes/wubi_scheme.h"
 #include <stdexcept>
 
-ImeSession::ImeSession(SchemeType scheme_type) : scheme_(create_scheme(scheme_type))
+ImeSession::ImeSession(SchemeType scheme_type, const ShuangpinProfile &shuangpin_profile)
+    : provider_registry_(shuangpin_profile), shuangpin_profile_(shuangpin_profile), scheme_(create_scheme(scheme_type))
 {
 }
 
@@ -161,7 +162,7 @@ std::unique_ptr<IInputScheme> ImeSession::create_scheme(SchemeType scheme_type) 
     switch (scheme_type)
     {
     case SchemeType::Shuangpin:
-        return std::make_unique<ShuangpinScheme>();
+        return std::make_unique<ShuangpinScheme>(shuangpin_profile_);
     case SchemeType::Quanpin:
         return std::make_unique<QuanpinScheme>();
     case SchemeType::Wubi:

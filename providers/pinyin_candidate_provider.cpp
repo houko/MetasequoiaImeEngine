@@ -5,6 +5,11 @@
 #include <fmt/core.h>
 #include <fmt/base.h>
 
+PinyinCandidateProvider::PinyinCandidateProvider(const ShuangpinProfile &shuangpin_profile)
+    : shuangpin_profile_(shuangpin_profile), shuangpin_engine_(shuangpin_profile)
+{
+}
+
 std::vector<WordItem> PinyinCandidateProvider::query(const QueryRequest &request)
 {
     if (!request.valid)
@@ -78,7 +83,7 @@ int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequ
         request.raw_input_with_cases.empty() ? request.raw_input : request.raw_input_with_cases;
     const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
     const std::string pure_input_with_cases = shuangpin::remove_manual_delimiters(raw_input_with_cases);
-    if (ShuangpinUtil::IsFullHelpMode(pure_input_with_cases))
+    if (ShuangpinUtil::IsFullHelpMode(pure_input_with_cases, shuangpin_profile_))
     {
         return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);
     }
@@ -86,7 +91,7 @@ int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequ
     if (pure_input.size() % 2 == 1 && pure_input.size() > 1)
     {
         const std::string base_raw_input = pure_input.substr(0, pure_input.size() - 1);
-        const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input);
+        const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input, shuangpin_profile_);
         if (ShuangpinUtil::is_all_complete_pinyin(base_raw_input, base_raw_segmentation))
         {
             return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);

@@ -1,6 +1,10 @@
 #include "provider_registry.h"
 #include <stdexcept>
 
+ProviderRegistry::ProviderRegistry(const ShuangpinProfile &shuangpin_profile) : pinyin_provider_(shuangpin_profile)
+{
+}
+
 ICandidateProvider &ProviderRegistry::resolve(SchemeType scheme_type)
 {
     switch (scheme_type)

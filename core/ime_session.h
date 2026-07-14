@@ -4,12 +4,14 @@
 #include "scheme_type.h"
 #include "../providers/provider_registry.h"
 #include "../schemes/input_scheme.h"
+#include "../shuangpin/shuangpin_profile.h"
 #include <memory>
 
 class ImeSession
 {
   public:
-    explicit ImeSession(SchemeType scheme_type = SchemeType::Shuangpin);
+    explicit ImeSession(SchemeType scheme_type = SchemeType::Shuangpin,
+                        const ShuangpinProfile &shuangpin_profile = GetXiaoheShuangpinProfile());
 
     void handle_key(UINT vk, UINT modifiers_down = 0, WCHAR wch = 0);
     void switch_scheme(SchemeType scheme_type);
@@ -37,6 +39,7 @@ class ImeSession
 
   private:
     ProviderRegistry provider_registry_;
+    const ShuangpinProfile &shuangpin_profile_;
     std::unique_ptr<IInputScheme> scheme_;
     CompositionState state_;
     bool enable_shuangpin_helpcode_ = false;

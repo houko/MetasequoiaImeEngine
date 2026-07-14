@@ -9,6 +9,7 @@
 class ShuangpinEngine
 {
   public:
+    explicit ShuangpinEngine(const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
     std::vector<WordItem> query(const QueryRequest &request);
     int create_word(std::string pinyin, std::string word);
     int update_weight_by_pinyin_and_word(std::string pinyin, std::string word);
@@ -19,5 +20,6 @@ class ShuangpinEngine
     void reset_cache();
 
   private:
+    const ShuangpinProfile &profile_;
     ShuangpinDictionary dictionary_;
 };

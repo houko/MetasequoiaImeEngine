@@ -8,6 +8,7 @@
 class ProviderRegistry
 {
   public:
+    explicit ProviderRegistry(const ShuangpinProfile &shuangpin_profile = GetXiaoheShuangpinProfile());
     ICandidateProvider &resolve(SchemeType scheme_type);
     void reset_cache(SchemeType scheme_type);
     int create_word(SchemeType scheme_type, std::string pinyin, std::string word);

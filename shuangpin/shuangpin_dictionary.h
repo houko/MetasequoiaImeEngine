@@ -3,6 +3,7 @@
 #include "../common/cache.h"
 #include "../core/word_item.h"
 #include "../quanpin/quanpin_query.h"
+#include "shuangpin_profile.h"
 #include <windows.h>
 #include <shared_mutex>
 #include <array>
@@ -53,10 +54,13 @@ class ShuangpinDictionary
 
     std::string search_sentence_from_ime_engine(const std::string &user_pinyin);
 
-    ShuangpinDictionary();
+    explicit ShuangpinDictionary(const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
     ~ShuangpinDictionary();
 
+    const ShuangpinProfile &profile() const { return profile_; }
+
   private:
+    const ShuangpinProfile &profile_;
     std::string quanpin_db_path_;
     sqlite3 *quanpin_db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt *> quanpin_statement_cache_;

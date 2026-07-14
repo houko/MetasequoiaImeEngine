@@ -50,6 +50,7 @@ set(
     "../common/helpcode_utils.cpp"
     "../common/string_utils.cpp"
     "../shuangpin/shuangpin_dictionary.cpp"
+    "../shuangpin/shuangpin_profile.cpp"
     "../shuangpin/shuangpin_query.cpp"
     "../shuangpin/shuangpin_utils.cpp"
     # Google IME

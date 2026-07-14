@@ -78,8 +78,8 @@ vector<string> ShuangpinDictionary::single_han_list{
     "在子自做走再最怎作总"  //
 };
 
-ShuangpinDictionary::ShuangpinDictionary()
-    : _kb_input_sequence(100), _cached_buffer(128), _cached_buffer_sgl(128), _cached_buffer_dbl(128),
+ShuangpinDictionary::ShuangpinDictionary(const ShuangpinProfile &profile)
+    : profile_(profile), _kb_input_sequence(100), _cached_buffer(128), _cached_buffer_sgl(128), _cached_buffer_dbl(128),
       _cached_buffer_series(128)
 {
     // 最多可以输出 64 个汉字，拼音最多可以接受 128 个字符
@@ -191,7 +191,8 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
         { /* 可能数据库查询的结果是空，这时就需要联想，这个只适合在此处联想 */
             if (candidate_list.size() == 0)
             {
-                string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(pinyin_segmentation);
+                string quanpin_str =
+                    ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(pinyin_segmentation, profile_);
                 string res = search_sentence_from_ime_engine(quanpin_str);
                 if (res.size() > 0)
                 {
@@ -323,7 +324,7 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
     result_list.insert(result_list.end(), first_helpcode_matched_list.begin(), first_helpcode_matched_list.end());
     result_list.insert(result_list.end(), last_helpcode_matched_list.begin(), last_helpcode_matched_list.end());
     /* 把原始拼音的候选列表加到辅助码模式的候选列表后面 */
-    const std::string original_segmentation = ShuangpinUtil::pinyin_segmentation(pinyin_sequence);
+    const std::string original_segmentation = ShuangpinUtil::pinyin_segmentation(pinyin_sequence, profile_);
     auto original_candidate_list = generateSeries(pinyin_sequence, original_segmentation);
     result_list.insert(result_list.end(), original_candidate_list.begin(), original_candidate_list.end());
     /* 把剩下的候选列表加到辅助码模式的候选列表后面 */
@@ -558,7 +559,7 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
     _pure_pinyin_sequence = _pinyin_sequence;
 
     /* Whether in full help mode */
-    _is_full_help_mode = ShuangpinUtil::IsFullHelpMode(_pinyin_sequence_with_cases);
+    _is_full_help_mode = ShuangpinUtil::IsFullHelpMode(_pinyin_sequence_with_cases, profile_);
     if (_is_full_help_mode)
     {
         _help_mode_raw_pos = _pinyin_sequence.size() - 2;
@@ -572,7 +573,7 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
     if (_is_full_help_mode)
     { // 全码辅助，结果只包含根据辅助码筛出来的候选词部分
         _pure_pinyin_sequence = _pinyin_sequence.substr(0, _help_mode_raw_pos);
-        _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence);
+        _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence, profile_);
         _pinyin_helpcodes = _pinyin_sequence.substr(     //
             _help_mode_raw_pos,                          //
             _pinyin_sequence.size() - _help_mode_raw_pos //
@@ -592,11 +593,11 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
         if (_pinyin_sequence.size() % 2 == 1 && _pinyin_sequence.size() > 1)
         { /* 1. 奇数长度拼音序列 */
             _pure_pinyin_sequence = _pinyin_sequence.substr(0, _pinyin_sequence.size() - 1);
-            _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence);
+            _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence, profile_);
             if (ShuangpinUtil::is_all_complete_pinyin(_pure_pinyin_sequence, _pinyin_segmentation))
             { /* 双拼部分是完整的拼音，需要触发辅助码 */
                 _pure_pinyin_sequence = _pinyin_sequence.substr(0, _pinyin_sequence.size() - 1);
-                _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence);
+                _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence, profile_);
                 _pinyin_helpcodes = _pinyin_sequence.substr(_pinyin_sequence.size() - 1, 1);
                 _cur_candidate_list = generate_with_helpcodes( //
                     _pure_pinyin_sequence,                     //
@@ -607,18 +608,18 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
             }
             else
             { /* 依然使用纯拼音，不触发辅助码模式 */
-                _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence);
+                _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence, profile_);
                 _cur_candidate_list = generateSeries(_pinyin_sequence, _pinyin_segmentation);
             }
         }
         else
         { /* 偶数长度拼音序列，不需要触发辅助码 */
-            _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence);
+            _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence, profile_);
             _cur_candidate_list = generateSeries(_pinyin_sequence, _pinyin_segmentation);
         }
     }
 
-    _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence);
+    _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pinyin_sequence, profile_);
 
     return 0;
 }
@@ -626,14 +627,14 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
 std::string ShuangpinDictionary::get_quanpin() const
 {
 
-    string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation);
+    string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation, profile_);
     quanpin_str.erase(std::remove(quanpin_str.begin(), quanpin_str.end(), '\''), quanpin_str.end());
     return quanpin_str;
 }
 
 std::string ShuangpinDictionary::get_quanpin_seg() const
 {
-    string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation);
+    string quanpin_str = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(_pinyin_segmentation, profile_);
     return quanpin_str;
 }
 
@@ -647,7 +648,7 @@ int ShuangpinDictionary::create_word(string pinyin, string word)
     OutputDebugString(fmt::format(L"[msime]: Creating word: pinyin={}, word={}", CommonUtils::string_to_wstring(pinyin),
                                   CommonUtils::string_to_wstring(word))
                           .c_str());
-    const std::string quanpin = shuangpin::normalize_input(pinyin);
+    const std::string quanpin = shuangpin::normalize_input(pinyin, profile_);
     OutputDebugString(fmt::format(L"[msime]: Normalized pinyin: {}", CommonUtils::string_to_wstring(quanpin)).c_str());
     const auto cuts = quanpin::cut_pinyin_by_mode(quanpin, "correction");
     if (cuts.empty())
@@ -769,7 +770,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     }
 
     const std::string quanpin_segmentation =
-        ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(pinyin_segmentation);
+        ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(pinyin_segmentation, profile_);
     const auto segments = quanpin::split_segments(quanpin_segmentation);
     if (segments.empty())
     {
@@ -870,7 +871,7 @@ std::string ShuangpinDictionary::normalize_shuangpin_to_quanpin_segmentation(con
         return {};
     }
 
-    return shuangpin::normalize_input_with_delimiters(pinyin);
+    return shuangpin::normalize_input_with_delimiters(pinyin, profile_);
 }
 
 std::string ShuangpinDictionary::normalize_shuangpin_to_quanpin_input(const std::string &pinyin) const
@@ -1119,7 +1120,7 @@ bool ShuangpinDictionary::is_all_complete_pure_pinyin()
 {
     bool res = ShuangpinUtil::is_all_complete_pinyin( //
         _pure_pinyin_sequence,                        //
-        ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence));
+        ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence, profile_));
     return res;
 }
 

@@ -10,6 +10,10 @@ bool is_alpha_vk(UINT vk)
 }
 } // namespace
 
+ShuangpinScheme::ShuangpinScheme(const ShuangpinProfile &profile) : profile_(profile)
+{
+}
+
 void ShuangpinScheme::reset()
 {
     raw_input_.clear();
@@ -89,11 +93,11 @@ QueryRequest ShuangpinScheme::build_request() const
         return request;
     }
 
-    const std::string raw_segmentation = shuangpin::segment_input(request.raw_input);
+    const std::string raw_segmentation = shuangpin::segment_input(request.raw_input, profile_);
     request.raw_segmentation = shuangpin::apply_segmentation_cases(raw_segmentation, request.raw_input_with_cases);
-    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(raw_segmentation);
+    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(raw_segmentation, profile_);
     request.segmentation = request.normalized_segmentation;
-    request.normalized_input = shuangpin::normalize_input(request.raw_input);
+    request.normalized_input = shuangpin::normalize_input(request.raw_input, profile_);
     return request;
 }
 
