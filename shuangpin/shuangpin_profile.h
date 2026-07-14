@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 struct ShuangpinProfile
@@ -13,3 +14,5 @@ struct ShuangpinProfile
 
 // Profiles have static storage duration and can safely be shared by sessions.
 const ShuangpinProfile &GetXiaoheShuangpinProfile();
+const ShuangpinProfile &GetZiranmaShuangpinProfile();
+const ShuangpinProfile &GetShuangpinProfile(std::string_view name);
