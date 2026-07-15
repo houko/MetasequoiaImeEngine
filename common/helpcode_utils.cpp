@@ -2,6 +2,7 @@
 
 #include <utf8.h>
 #include <algorithm>
+#include <atomic>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <cctype>
@@ -29,15 +30,17 @@ std::string get_local_appdata_path()
 
 const std::string kAppName = "MetasequoiaImeTsf";
 const std::string kPathSeparator = "\\";
-const std::string kHelpcodeFileName = "helpcode.txt";
+const std::string kLantianHelpcodeFileName = "helpcode.txt";
+const std::string kZiranmaHelpcodeFileName = "zrm_helpcode_big_unique.txt";
+std::atomic_bool g_use_ziranma{false};
 
-std::unordered_map<std::string, std::string> initialize_helpcode_keymap()
+std::unordered_map<std::string, std::string> initialize_helpcode_keymap(const std::string &file_name)
 {
     std::unordered_map<std::string, std::string> result;
-    std::ifstream helpcode_path(get_local_appdata_path() + kPathSeparator + kAppName + kPathSeparator + kHelpcodeFileName);
+    std::ifstream helpcode_path(get_local_appdata_path() + kPathSeparator + kAppName + kPathSeparator + file_name);
     if (!helpcode_path.is_open())
     {
-        spdlog::error("Failed to open helpcode.txt file. Please make sure file exists.");
+        spdlog::error("Failed to open helpcode file {}. Please make sure file exists.", file_name);
         return result;
     }
 
@@ -60,8 +63,17 @@ namespace HelpcodeUtils
 
 const std::unordered_map<std::string, std::string> &helpcode_keymap()
 {
-    static const std::unordered_map<std::string, std::string> keymap = initialize_helpcode_keymap();
-    return keymap;
+    static const auto lantian_keymap = initialize_helpcode_keymap(kLantianHelpcodeFileName);
+    static const auto ziranma_keymap = initialize_helpcode_keymap(kZiranmaHelpcodeFileName);
+    return g_use_ziranma.load(std::memory_order_relaxed) ? ziranma_keymap : lantian_keymap;
+}
+
+bool select_helpcode_schema(const std::string &schema)
+{
+    if (schema != "lantian" && schema != "ziranma")
+        return false;
+    g_use_ziranma.store(schema == "ziranma", std::memory_order_relaxed);
+    return true;
 }
 
 std::string get_first_han_char(const std::string &words)
