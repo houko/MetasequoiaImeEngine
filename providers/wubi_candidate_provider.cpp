@@ -74,12 +74,14 @@ int WubiCandidateProvider::delete_by_pinyin_and_word(SchemeType, std::string, st
     return kNoMutation;
 }
 
-int WubiCandidateProvider::cache_dynamic_candidate(SchemeType, const std::string &, const std::string &)
+int WubiCandidateProvider::cache_dynamic_candidate(SchemeType, const std::string &, const std::string &,
+                                                   CandidateSource)
 {
     return kNoMutation;
 }
 
-int WubiCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequest &, const std::string &)
+int WubiCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequest &, const std::string &,
+                                                               CandidateSource)
 {
     return kNoMutation;
 }

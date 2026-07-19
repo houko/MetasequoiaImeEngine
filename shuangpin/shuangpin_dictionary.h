@@ -188,8 +188,10 @@ class ShuangpinDictionary
         return get_current_candidate_list();
     }
 
-    int insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word);
-    int insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word);
+    int insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word,
+                                            CandidateSource source);
+    int insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word,
+                                             CandidateSource source);
 
     bool is_all_complete_pinyin();
     bool is_all_complete_pure_pinyin();

@@ -1051,7 +1051,8 @@ void ShuangpinDictionary::reset_cache()
     _cached_buffer_series.clear();
 }
 
-int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word)
+int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word,
+                                                             CandidateSource source)
 {
     OutputDebugString(fmt::format(L"[msime]: pinyin: {}, word: {}", CommonUtils::string_to_wstring(pinyin),
                                   CommonUtils::string_to_wstring(word))
@@ -1064,23 +1065,25 @@ int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &
         auto list = opt.value();
         if (list.size() >= 1)
         {
-            list.insert(list.begin() + 1, WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion));
+            const size_t index = source == CandidateSource::AiSuggestion ? std::min<size_t>(2, list.size()) : 1;
+            list.insert(list.begin() + index, WordItem(pinyin, word, 1, source));
         }
         else
         {
-            list.emplace_back(pinyin, word, 1, CandidateSource::CloudSuggestion);
+            list.emplace_back(pinyin, word, 1, source);
         }
         _cached_buffer_series.insert(pinyin, list);
     }
     else
     {
         _cached_buffer_series.insert(pinyin,
-                                     vector<WordItem>{WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion)});
+                                     vector<WordItem>{WordItem(pinyin, word, 1, source)});
     }
     return 0;
 }
 
-int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word)
+int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word,
+                                                              CandidateSource source)
 {
     auto insert_into_cache = [&](auto &cache) {
         if (auto opt = cache.get(pinyin))
@@ -1092,11 +1095,12 @@ int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string 
             {
                 if (list.size() >= 1)
                 {
-                    list.insert(list.begin() + 1, WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion));
+                    const size_t index = source == CandidateSource::AiSuggestion ? std::min<size_t>(2, list.size()) : 1;
+                    list.insert(list.begin() + index, WordItem(pinyin, word, 1, source));
                 }
                 else
                 {
-                    list.emplace_back(pinyin, word, 1, CandidateSource::CloudSuggestion);
+                    list.emplace_back(pinyin, word, 1, source);
                 }
             }
             cache.insert(pinyin, list);

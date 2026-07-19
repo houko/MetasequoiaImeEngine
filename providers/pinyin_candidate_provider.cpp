@@ -63,16 +63,19 @@ int PinyinCandidateProvider::delete_by_pinyin_and_word(SchemeType scheme, std::s
     return quanpin_engine_.delete_by_pinyin_and_word(std::move(pinyin), std::move(word));
 }
 
-int PinyinCandidateProvider::cache_dynamic_candidate(SchemeType scheme, const std::string &pinyin, const std::string &word)
+int PinyinCandidateProvider::cache_dynamic_candidate(SchemeType scheme, const std::string &pinyin,
+                                                     const std::string &word, CandidateSource source)
 {
     if (scheme == SchemeType::Shuangpin)
     {
-        return shuangpin_engine_.insert_word_to_series_cache(pinyin, word);
+        return shuangpin_engine_.insert_word_to_series_cache(pinyin, word, source);
     }
-    return quanpin_engine_.insert_word_to_series_cache(pinyin, word);
+    return quanpin_engine_.insert_word_to_series_cache(pinyin, word, source);
 }
 
-int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word)
+int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequest &request,
+                                                                 const std::string &word,
+                                                                 CandidateSource source)
 {
     if (request.scheme != SchemeType::Shuangpin || !request.enable_shuangpin_helpcode)
     {
@@ -85,7 +88,7 @@ int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequ
     const std::string pure_input_with_cases = shuangpin::remove_manual_delimiters(raw_input_with_cases);
     if (ShuangpinUtil::IsFullHelpMode(pure_input_with_cases, shuangpin_profile_))
     {
-        return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);
+        return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word, source);
     }
 
     if (pure_input.size() % 2 == 1 && pure_input.size() > 1)
@@ -94,7 +97,7 @@ int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequ
         const std::string base_raw_segmentation = shuangpin::segment_input(base_raw_input, shuangpin_profile_);
         if (ShuangpinUtil::is_all_complete_pinyin(base_raw_input, base_raw_segmentation))
         {
-            return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word);
+            return shuangpin_engine_.insert_word_to_active_helpcode_cache(request.raw_input, word, source);
         }
     }
 

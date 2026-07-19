@@ -192,14 +192,16 @@ int ShuangpinEngine::delete_by_pinyin_and_word(std::string pinyin, std::string w
     return dictionary_.delete_by_pinyin_and_word(std::move(pinyin), std::move(word));
 }
 
-int ShuangpinEngine::insert_word_to_series_cache(const std::string &pinyin, const std::string &word)
+int ShuangpinEngine::insert_word_to_series_cache(const std::string &pinyin, const std::string &word,
+                                                 CandidateSource source)
 {
-    return dictionary_.insert_word_to_cached_buffer_series(pinyin, word);
+    return dictionary_.insert_word_to_cached_buffer_series(pinyin, word, source);
 }
 
-int ShuangpinEngine::insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word)
+int ShuangpinEngine::insert_word_to_active_helpcode_cache(const std::string &pinyin, const std::string &word,
+                                                         CandidateSource source)
 {
-    return dictionary_.insert_word_to_active_helpcode_cache(pinyin, word);
+    return dictionary_.insert_word_to_active_helpcode_cache(pinyin, word, source);
 }
 
 std::string ShuangpinEngine::search_sentence_from_ime_engine(const std::string &user_pinyin)

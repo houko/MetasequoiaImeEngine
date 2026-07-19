@@ -51,12 +51,13 @@ int ProviderRegistry::delete_by_pinyin_and_word(SchemeType scheme_type, std::str
 }
 
 int ProviderRegistry::cache_dynamic_candidate(SchemeType scheme_type, const std::string &pinyin,
-                                              const std::string &word)
+                                              const std::string &word, CandidateSource source)
 {
-    return resolve(scheme_type).cache_dynamic_candidate(scheme_type, pinyin, word);
+    return resolve(scheme_type).cache_dynamic_candidate(scheme_type, pinyin, word, source);
 }
 
-int ProviderRegistry::cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word)
+int ProviderRegistry::cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word,
+                                                          CandidateSource source)
 {
-    return resolve(request.scheme).cache_dynamic_candidate_for_request(request, word);
+    return resolve(request.scheme).cache_dynamic_candidate_for_request(request, word, source);
 }

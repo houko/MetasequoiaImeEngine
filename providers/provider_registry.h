@@ -14,8 +14,10 @@ class ProviderRegistry
     int create_word(SchemeType scheme_type, std::string pinyin, std::string word);
     int update_weight_by_pinyin_and_word(SchemeType scheme_type, std::string pinyin, std::string word);
     int delete_by_pinyin_and_word(SchemeType scheme_type, std::string pinyin, std::string word);
-    int cache_dynamic_candidate(SchemeType scheme_type, const std::string &pinyin, const std::string &word);
-    int cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word);
+    int cache_dynamic_candidate(SchemeType scheme_type, const std::string &pinyin, const std::string &word,
+                                CandidateSource source);
+    int cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word,
+                                            CandidateSource source);
 
   private:
     PinyinCandidateProvider pinyin_provider_;

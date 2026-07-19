@@ -67,9 +67,10 @@ int QuanpinEngine::delete_by_pinyin_and_word(std::string pinyin, std::string wor
     return dictionary_.delete_by_pinyin_and_word(std::move(pinyin), std::move(word));
 }
 
-int QuanpinEngine::insert_word_to_series_cache(const std::string &pinyin, const std::string &word)
+int QuanpinEngine::insert_word_to_series_cache(const std::string &pinyin, const std::string &word,
+                                               CandidateSource source)
 {
-    return dictionary_.insert_word_to_series_cache(pinyin, word);
+    return dictionary_.insert_word_to_series_cache(pinyin, word, source);
 }
 
 std::string QuanpinEngine::search_sentence_from_ime_engine(const std::string &user_pinyin)

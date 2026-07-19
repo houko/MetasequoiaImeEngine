@@ -348,7 +348,8 @@ int QuanpinDictionary::delete_by_pinyin_and_word(std::string pinyin, std::string
     return OK;
 }
 
-int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, const std::string &word)
+int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, const std::string &word,
+                                                   CandidateSource source)
 {
     if (pinyin.empty() || word.empty())
     {
@@ -364,18 +365,19 @@ int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, co
         {
             if (list.empty())
             {
-                list.emplace_back(pinyin, word, 1, CandidateSource::CloudSuggestion);
+                list.emplace_back(pinyin, word, 1, source);
             }
             else
             {
-                list.insert(list.begin() + 1, WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion));
+                const size_t index = source == CandidateSource::AiSuggestion ? std::min<size_t>(2, list.size()) : 1;
+                list.insert(list.begin() + index, WordItem(pinyin, word, 1, source));
             }
         }
         series_cache_.insert(pinyin, list);
         return OK;
     }
 
-    series_cache_.insert(pinyin, std::vector<WordItem>{WordItem(pinyin, word, 1, CandidateSource::CloudSuggestion)});
+    series_cache_.insert(pinyin, std::vector<WordItem>{WordItem(pinyin, word, 1, source)});
     return OK;
 }
 

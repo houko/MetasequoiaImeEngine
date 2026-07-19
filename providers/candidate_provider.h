@@ -16,6 +16,8 @@ class ICandidateProvider
     virtual int create_word(SchemeType scheme, std::string pinyin, std::string word) = 0;
     virtual int update_weight_by_pinyin_and_word(SchemeType scheme, std::string pinyin, std::string word) = 0;
     virtual int delete_by_pinyin_and_word(SchemeType scheme, std::string pinyin, std::string word) = 0;
-    virtual int cache_dynamic_candidate(SchemeType scheme, const std::string &pinyin, const std::string &word) = 0;
-    virtual int cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word) = 0;
+    virtual int cache_dynamic_candidate(SchemeType scheme, const std::string &pinyin, const std::string &word,
+                                        CandidateSource source) = 0;
+    virtual int cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word,
+                                                    CandidateSource source) = 0;
 };
