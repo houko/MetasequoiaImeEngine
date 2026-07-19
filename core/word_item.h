@@ -9,6 +9,7 @@ enum class CandidateSource
     UserDatabase,
     CloudSuggestion,
     EnglishDictionary,
+    QuickPhrase,
     Generated,
     Fallback,
 };
