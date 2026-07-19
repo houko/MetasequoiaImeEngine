@@ -8,6 +8,7 @@ enum class CandidateSource
     Database,
     UserDatabase,
     CloudSuggestion,
+    AiSuggestion,
     EnglishDictionary,
     QuickPhrase,
     Generated,
