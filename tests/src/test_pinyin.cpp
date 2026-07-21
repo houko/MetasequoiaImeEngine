@@ -37,11 +37,11 @@ class ScopedLocalAppDataOverride
         }
 
         root_ = fs::temp_directory_path() / "msime-regression" / suffix;
-        app_dir_ = root_ / "MetasequoiaImeTsf";
+        app_dir_ = root_ / "metasequoiaime";
         fs::remove_all(root_);
         fs::create_directories(app_dir_);
 
-        const fs::path source_dir = fs::path(original_) / "MetasequoiaImeTsf";
+        const fs::path source_dir = fs::path(original_) / "metasequoiaime";
         for (const auto &file_name : {"msime.db", "dict_pinyin.dat", "user_dict.dat"})
         {
             const fs::path source = source_dir / file_name;
@@ -328,7 +328,7 @@ void test_shuangpin_dictionary_create_pin_delete()
 
     sqlite3 *probe_db = nullptr;
     const std::string probe_db_path =
-        local_appdata.local_appdata() + "\\MetasequoiaImeTsf\\msime.db";
+        local_appdata.local_appdata() + "\\metasequoiaime\\msime.db";
     expect(sqlite3_open(probe_db_path.c_str(), &probe_db) == SQLITE_OK,
            fmt::format("Failed to open probe db '{}'.", probe_db_path));
     char *probe_error = nullptr;

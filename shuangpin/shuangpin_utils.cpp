@@ -7,7 +7,7 @@
 
 using namespace std;
 
-const string ShuangpinUtil::app_name = "MetasequoiaImeTsf";
+const string ShuangpinUtil::app_name = "metasequoiaime";
 static string path_seperator = "\\";
 static string pinyin_file_name = "pinyin.txt";
 

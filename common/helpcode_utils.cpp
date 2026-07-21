@@ -28,7 +28,7 @@ std::string get_local_appdata_path()
     return localAppDataDirStr.empty() ? "" : localAppDataDirStr;
 }
 
-const std::string kAppName = "MetasequoiaImeTsf";
+const std::string kAppName = "metasequoiaime";
 const std::string kPathSeparator = "\\";
 const std::string kLantianHelpcodeFileName = "helpcode.txt";
 const std::string kZiranmaHelpcodeFileName = "zrm_helpcode_big_unique.txt";
