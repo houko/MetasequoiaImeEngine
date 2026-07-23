@@ -356,28 +356,32 @@ int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, co
         return ERROR_CODE;
     }
 
-    if (auto cached = series_cache_.get(pinyin))
+    auto list = series_cache_.get(pinyin).value_or(std::vector<WordItem>{});
+
+    // Keep at most one cloud/AI suggestion in the series cache for this key.
+    if (source == CandidateSource::AiSuggestion || source == CandidateSource::CloudSuggestion)
     {
-        auto list = cached.value();
-        const auto exists =
-            std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
-        if (exists == list.end())
-        {
-            if (list.empty())
-            {
-                list.emplace_back(pinyin, word, 1, source);
-            }
-            else
-            {
-                const size_t index = source == CandidateSource::AiSuggestion ? std::min<size_t>(2, list.size()) : 1;
-                list.insert(list.begin() + index, WordItem(pinyin, word, 1, source));
-            }
-        }
-        series_cache_.insert(pinyin, list);
-        return OK;
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [source](const WordItem &item) { return item.source == source; }),
+                   list.end());
     }
 
-    series_cache_.insert(pinyin, std::vector<WordItem>{WordItem(pinyin, word, 1, source)});
+    const auto exists =
+        std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
+    if (exists == list.end())
+    {
+        if (list.empty())
+        {
+            list.emplace_back(pinyin, word, 1, source);
+        }
+        else
+        {
+            const size_t index = source == CandidateSource::AiSuggestion ? std::min<size_t>(2, list.size()) : 1;
+            list.insert(list.begin() + index, WordItem(pinyin, word, 1, source));
+        }
+    }
+
+    series_cache_.insert(pinyin, list);
     return OK;
 }
 

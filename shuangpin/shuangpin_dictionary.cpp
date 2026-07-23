@@ -4,6 +4,7 @@
 #include "../quanpin/quanpin_query.h"
 #include "shuangpin_query.h"
 #include "shuangpin_utils.h"
+#include <algorithm>
 #include <mutex>
 #include <shared_mutex>
 #include <sqlite3.h>
@@ -1057,28 +1058,37 @@ int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &
     OutputDebugString(fmt::format(L"[msime]: pinyin: {}, word: {}", CommonUtils::string_to_wstring(pinyin),
                                   CommonUtils::string_to_wstring(word))
                           .c_str());
-    if (auto opt = _cached_buffer_series.get(pinyin))
+    if (pinyin.empty() || word.empty())
     {
-#ifdef FANY_DEBUG
-        OutputDebugString(fmt::format(L"[msime]: insert_word_to_cached_buffer_series").c_str());
-#endif
-        auto list = opt.value();
-        if (list.size() >= 1)
+        return -1;
+    }
+
+    auto list = _cached_buffer_series.get(pinyin).value_or(std::vector<WordItem>{});
+
+    // Keep at most one cloud/AI suggestion in the series cache for this key.
+    if (source == CandidateSource::AiSuggestion || source == CandidateSource::CloudSuggestion)
+    {
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [source](const WordItem &item) { return item.source == source; }),
+                   list.end());
+    }
+
+    const auto exists =
+        std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
+    if (exists == list.end())
+    {
+        if (list.empty())
+        {
+            list.emplace_back(pinyin, word, 1, source);
+        }
+        else
         {
             const size_t index = source == CandidateSource::AiSuggestion ? std::min<size_t>(2, list.size()) : 1;
             list.insert(list.begin() + index, WordItem(pinyin, word, 1, source));
         }
-        else
-        {
-            list.emplace_back(pinyin, word, 1, source);
-        }
-        _cached_buffer_series.insert(pinyin, list);
     }
-    else
-    {
-        _cached_buffer_series.insert(pinyin,
-                                     vector<WordItem>{WordItem(pinyin, word, 1, source)});
-    }
+
+    _cached_buffer_series.insert(pinyin, list);
     return 0;
 }
 
@@ -1089,6 +1099,12 @@ int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string 
         if (auto opt = cache.get(pinyin))
         {
             auto list = opt.value();
+            if (source == CandidateSource::AiSuggestion || source == CandidateSource::CloudSuggestion)
+            {
+                list.erase(std::remove_if(list.begin(), list.end(),
+                                          [source](const WordItem &item) { return item.source == source; }),
+                           list.end());
+            }
             const auto exists =
                 std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
             if (exists == list.end())
