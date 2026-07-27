@@ -7,9 +7,9 @@
 #include "../shuangpin/shuangpin_utils.h"
 #include <algorithm>
 #include <boost/locale/encoding_utf.hpp>
+#include <climits>
 #include <cstring>
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 #include <unordered_set>
 
 namespace
@@ -57,13 +57,13 @@ QuanpinDictionary::QuanpinDictionary()
         (fmt::format("{}\\{}\\user_dict.dat", shuangpin::get_local_appdata_path(), shuangpin::get_app_name())).c_str());
     if (!decoder_ready_)
     {
-        spdlog::warn("QuanpinDictionary failed to open google ime decoder.");
+        (void)0;
     }
 
     const int exit = sqlite3_open(db_path_.c_str(), &db_);
     if (exit != SQLITE_OK)
     {
-        spdlog::warn("QuanpinDictionary failed to open sqlite db: {}", db_path_);
+        (void)0;
     }
 
     quanpin::warm_up(db_, statement_cache_);
@@ -120,8 +120,6 @@ std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_inp
     }
 
     std::vector<WordItem> result;
-    result.reserve(80);
-
     for (size_t count = segments.size(); count > 0; --count)
     {
         quanpin::Segments partial_segments(segments.begin(), segments.begin() + static_cast<std::ptrdiff_t>(count));
@@ -228,7 +226,8 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
 
     try
     {
-        const auto flat_items = quanpin::query_segments_flat(segments, db_, statement_cache_, 80);
+        const auto flat_items =
+            quanpin::query_segments_flat(segments, db_, statement_cache_, INT_MAX);
         std::vector<WordItem> result;
         result.reserve(flat_items.size());
         const std::string code = segmentation.empty() ? quanpin::join_segments(segments) : segmentation;
@@ -240,7 +239,7 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
     }
     catch (const std::exception &ex)
     {
-        spdlog::warn("QuanpinDictionary sqlite query failed: {}", ex.what());
+        (void)0;
         return {};
     }
 }
@@ -436,7 +435,7 @@ std::vector<std::string> QuanpinDictionary::select_data(const std::string &sql_s
     sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql_str.c_str(), -1, &stmt, 0) != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
         return candidate_list;
     }
 
@@ -459,7 +458,7 @@ std::vector<WordItem> QuanpinDictionary::select_complete_data(const std::string 
     sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql_str.c_str(), -1, &stmt, 0) != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
         return candidate_list;
     }
 
@@ -483,7 +482,7 @@ int QuanpinDictionary::check_data(const std::string &sql_str)
     sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql_str.c_str(), -1, &stmt, 0) != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
         return false;
     }
 
@@ -502,12 +501,12 @@ int QuanpinDictionary::insert_data(const std::string &sql_str)
     sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql_str.c_str(), -1, &stmt, 0) != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
         return ERROR_CODE;
     }
     if (sqlite3_step(stmt) != SQLITE_DONE)
     {
-        spdlog::error("sqlite3_step error.");
+        (void)0;
     }
     sqlite3_finalize(stmt);
     return OK;
@@ -523,12 +522,12 @@ int QuanpinDictionary::update_data(const std::string &sql_str)
     sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql_str.c_str(), -1, &stmt, 0) != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
         return ERROR_CODE;
     }
     if (sqlite3_step(stmt) != SQLITE_DONE)
     {
-        spdlog::error("sqlite3_step error.");
+        (void)0;
     }
     sqlite3_finalize(stmt);
     return OK;
@@ -544,12 +543,12 @@ int QuanpinDictionary::delete_data(const std::string &sql_str)
     sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql_str.c_str(), -1, &stmt, 0) != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
         return ERROR_CODE;
     }
     if (sqlite3_step(stmt) != SQLITE_DONE)
     {
-        spdlog::error("sqlite3_step error.");
+        (void)0;
     }
     sqlite3_finalize(stmt);
     return OK;
@@ -570,7 +569,7 @@ std::string QuanpinDictionary::build_sql_for_creating_word(const std::string &pi
         const std::string key = quanpin::join_segments(partial);
         const std::string table = quanpin::build_table_name(partial);
         const std::string each =
-            fmt::format("select * from(select * from {} where key = '{}' order by weight desc limit 80)", table, key);
+            fmt::format("select * from(select * from {} where key = '{}' order by weight desc)", table, key);
         sql = sql.empty() ? each : each + " union all " + sql;
     }
     return sql;

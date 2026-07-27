@@ -48,7 +48,7 @@ std::vector<WordItem> WubiCandidateProvider::query(const QueryRequest &request)
 
     if (result != SQLITE_DONE)
     {
-        spdlog::warn("Wubi query failed for code '{}': {}", request.normalized_input, sqlite3_errmsg(db_));
+        (void)0;
         return {};
     }
     return candidates;
@@ -95,8 +95,7 @@ bool WubiCandidateProvider::ensure_query_statement()
 
     if (db_ == nullptr && sqlite3_open_v2(db_path_.c_str(), &db_, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK)
     {
-        spdlog::warn("Unable to open Wubi database '{}': {}", db_path_,
-                     db_ == nullptr ? "unknown error" : sqlite3_errmsg(db_));
+        (void)0;
         close_database();
         return false;
     }
@@ -105,7 +104,7 @@ bool WubiCandidateProvider::ensure_query_statement()
                                       "WHERE \"key\" = ?1 ORDER BY \"weight\" DESC, rowid ASC";
     if (sqlite3_prepare_v2(db_, query_sql, -1, &query_statement_, nullptr) != SQLITE_OK)
     {
-        spdlog::warn("Unable to prepare Wubi query for '{}': {}", db_path_, sqlite3_errmsg(db_));
+        (void)0;
         close_database();
         return false;
     }

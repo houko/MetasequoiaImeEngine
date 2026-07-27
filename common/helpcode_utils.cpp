@@ -40,7 +40,7 @@ std::unordered_map<std::string, std::string> initialize_helpcode_keymap(const st
     std::ifstream helpcode_path(get_local_appdata_path() + kPathSeparator + kAppName + kPathSeparator + file_name);
     if (!helpcode_path.is_open())
     {
-        spdlog::error("Failed to open helpcode file {}. Please make sure file exists.", file_name);
+        (void)0;
         return result;
     }
 

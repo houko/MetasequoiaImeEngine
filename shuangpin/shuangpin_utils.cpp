@@ -62,7 +62,7 @@ unordered_set<string> &initialize_quanpin_set()
     );
     if (!pinyin_path.is_open())
     {
-        spdlog::error("Failed to open pinyin.txt file. Please make sure file exists.");
+        (void)0;
     }
     string line;
     while (getline(pinyin_path, line))

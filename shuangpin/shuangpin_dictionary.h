@@ -64,7 +64,6 @@ class ShuangpinDictionary
     std::string quanpin_db_path_;
     sqlite3 *quanpin_db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt *> quanpin_statement_cache_;
-    int default_candicate_page_limit = 80;
 
     static std::vector<std::string> alpha_list;
     static std::vector<std::string> single_han_list;

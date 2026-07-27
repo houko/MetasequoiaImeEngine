@@ -56,7 +56,7 @@ std::vector<WordItem> EnglishDictionary::query_prefix(const std::string &prefix,
 
     if (result != SQLITE_DONE)
     {
-        spdlog::warn("English prefix query failed for '{}': {}", prefix, sqlite3_errmsg(db_));
+        (void)0;
         return {};
     }
     return candidates;
@@ -77,8 +77,7 @@ bool EnglishDictionary::ensure_query_statement()
     if (db_ == nullptr &&
         sqlite3_open_v2(db_path_.c_str(), &db_, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nullptr) != SQLITE_OK)
     {
-        spdlog::warn("Unable to open English database '{}': {}", db_path_,
-                     db_ == nullptr ? "unknown error" : sqlite3_errmsg(db_));
+        (void)0;
         close_database();
         return false;
     }
@@ -90,7 +89,7 @@ bool EnglishDictionary::ensure_query_statement()
         "LIMIT ?3";
     if (sqlite3_prepare_v2(db_, query_sql, -1, &query_statement_, nullptr) != SQLITE_OK)
     {
-        spdlog::warn("Unable to prepare English prefix query for '{}': {}", db_path_, sqlite3_errmsg(db_));
+        (void)0;
         close_database();
         return false;
     }

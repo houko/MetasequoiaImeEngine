@@ -1,6 +1,5 @@
 #include "shuangpin_dictionary.h"
 #include "../common/helpcode_utils.h"
-#include "../common/string_utils.h"
 #include "../quanpin/quanpin_query.h"
 #include "shuangpin_query.h"
 #include "shuangpin_utils.h"
@@ -14,7 +13,7 @@
 #include <utility>
 #include <cstdlib>
 #include "../googlepinyinime-rev/src/include/pinyinime.h"
-#include "spdlog/spdlog.h"
+#include <climits>
 #include <boost/locale/encoding_utf.hpp>
 #include <boost/algorithm/string.hpp>
 #include <fmt/xchar.h>
@@ -24,7 +23,6 @@ using namespace std;
 
 namespace
 {
-
 std::string remove_delimiters(const std::string &segmented)
 {
     std::string normalized = segmented;
@@ -93,14 +91,14 @@ ShuangpinDictionary::ShuangpinDictionary(const ShuangpinProfile &profile)
     );
     if (!_res)
     {
-        spdlog::error("Failed to open googleime dictionary.");
+        (void)0;
     }
 
     quanpin_db_path_ = quanpin::get_default_db_path();
     int exit = sqlite3_open(quanpin_db_path_.c_str(), &quanpin_db_);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("Failed to open quanpin db.");
+        (void)0;
     }
     else
     {
@@ -646,11 +644,9 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_for_creating
 
 int ShuangpinDictionary::create_word(string pinyin, string word)
 {
-    OutputDebugString(fmt::format(L"[msime]: Creating word: pinyin={}, word={}", CommonUtils::string_to_wstring(pinyin),
-                                  CommonUtils::string_to_wstring(word))
-                          .c_str());
+    (void)0;
     const std::string quanpin = shuangpin::normalize_input(pinyin, profile_);
-    OutputDebugString(fmt::format(L"[msime]: Normalized pinyin: {}", CommonUtils::string_to_wstring(quanpin)).c_str());
+    (void)0;
     const auto cuts = quanpin::cut_pinyin_by_mode(quanpin, "correction");
     if (cuts.empty())
     {
@@ -659,13 +655,10 @@ int ShuangpinDictionary::create_word(string pinyin, string word)
 
     pinyin = quanpin::join_segments(cuts.front());
     const string jp = quanpin::segments_to_jianpin(cuts.front());
-    OutputDebugString(fmt::format(L"[msime]: Generated jianpin: {}", CommonUtils::string_to_wstring(jp)).c_str());
+    (void)0;
     if (!do_validate(pinyin, jp, word))
     {
-        OutputDebugString(fmt::format(L"[msime]: Validation failed for pinyin={}, jp={}, word={}",
-                                      CommonUtils::string_to_wstring(pinyin), CommonUtils::string_to_wstring(jp),
-                                      CommonUtils::string_to_wstring(word))
-                              .c_str());
+        (void)0;
         return ERROR_CODE;
     }
     if (check_data(quanpin_db_, build_quanpin_sql_for_checking_word(pinyin, jp, word)))
@@ -691,7 +684,7 @@ int ShuangpinDictionary::update_data(sqlite3 *target_db, const std::string &sql_
     int exit = sqlite3_exec(target_db, sql_str.c_str(), nullptr, nullptr, &errmsg);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_exec error: {}", errmsg == nullptr ? sqlite3_errmsg(target_db) : errmsg);
+        (void)0;
         sqlite3_free(errmsg);
         return ERROR_CODE;
     }
@@ -708,7 +701,7 @@ int ShuangpinDictionary::delete_data(sqlite3 *target_db, const std::string &sql_
     int exit = sqlite3_exec(target_db, sql_str.c_str(), nullptr, nullptr, &errmsg);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_exec error: {}", errmsg == nullptr ? sqlite3_errmsg(target_db) : errmsg);
+        (void)0;
         sqlite3_free(errmsg);
         return ERROR_CODE;
     }
@@ -785,7 +778,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
             quanpin::query_segments_flat(segments,
                                          quanpin_db_,
                                          quanpin_statement_cache_,
-                                         default_candicate_page_limit,
+                                         INT_MAX,
                                          quanpin::QuerySource::Shuangpin);
         candidate_list.reserve(flat_items.size());
         for (const auto &[word, weight] : flat_items)
@@ -795,7 +788,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     }
     catch (const std::exception &ex)
     {
-        spdlog::warn("ShuangpinDictionary quanpin sqlite query failed: {}", ex.what());
+        (void)0;
     }
 
     return candidate_list;
@@ -813,7 +806,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(
     int exit = sqlite3_prepare_v2(target_db, sql_str.c_str(), -1, &stmt, 0);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
     }
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
@@ -836,7 +829,7 @@ int ShuangpinDictionary::check_data(sqlite3 *target_db, const std::string &sql_s
     int exit = sqlite3_prepare_v2(target_db, sql_str.c_str(), -1, &stmt, 0);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_prepare_v2 error.");
+        (void)0;
     }
     bool exists = false;
     exit = sqlite3_step(stmt);
@@ -858,7 +851,7 @@ int ShuangpinDictionary::insert_data(sqlite3 *target_db, const std::string &sql_
     int exit = sqlite3_exec(target_db, sql_str.c_str(), nullptr, nullptr, &errmsg);
     if (exit != SQLITE_OK)
     {
-        spdlog::error("sqlite3_exec error: {}", errmsg == nullptr ? sqlite3_errmsg(target_db) : errmsg);
+        (void)0;
         sqlite3_free(errmsg);
         return ERROR_CODE;
     }
@@ -896,7 +889,7 @@ std::string ShuangpinDictionary::build_quanpin_sql_for_creating_word(const std::
         const std::string key = quanpin::join_segments(partial);
         const std::string table = quanpin::build_table_name(partial);
         const std::string each =
-            fmt::format("select * from(select * from {} where key = '{}' order by weight desc limit 80)", table, key);
+            fmt::format("select * from(select * from {} where key = '{}' order by weight desc)", table, key);
         sql = sql.empty() ? each : each + " union all " + sql;
     }
     return sql;
@@ -1055,9 +1048,7 @@ void ShuangpinDictionary::reset_cache()
 int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word,
                                                              CandidateSource source)
 {
-    OutputDebugString(fmt::format(L"[msime]: pinyin: {}, word: {}", CommonUtils::string_to_wstring(pinyin),
-                                  CommonUtils::string_to_wstring(word))
-                          .c_str());
+    (void)0;
     if (pinyin.empty() || word.empty())
     {
         return -1;

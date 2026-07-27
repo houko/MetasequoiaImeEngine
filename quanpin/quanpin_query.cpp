@@ -3,6 +3,7 @@
 #include "quanpin_utils.h"
 #include "../shuangpin/shuangpin_utils.h"
 #include <algorithm>
+#include <climits>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
@@ -173,6 +174,10 @@ bool matches_mixed_segments(const std::string &key, const Segments &segments, Qu
 
 int build_mixed_jianpin_scan_limit(int limit)
 {
+    if (limit > INT_MAX / 16)
+    {
+        return INT_MAX;
+    }
     return std::max(limit * 16, 128);
 }
 
