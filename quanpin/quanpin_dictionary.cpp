@@ -1,4 +1,5 @@
 #include "quanpin_dictionary.h"
+#include "../user_dictionary/user_dictionary_journal.h"
 
 #include "../common/helpcode_utils.h"
 #include "quanpin_query.h"
@@ -364,28 +365,51 @@ int QuanpinDictionary::create_word(std::string pinyin, std::string word)
         return OK;
     }
 
-    insert_data(build_sql_for_inserting_word(pinyin, jp, word));
+    if (insert_data(build_sql_for_inserting_word(pinyin, jp, word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    (void)user_dictionary::record_upsert(user_dictionary::default_user_db_path(),
+                                         user_dictionary::DictionaryKind::Pinyin, pinyin, word, 10000);
     reset_cache();
     return OK;
 }
 
 int QuanpinDictionary::update_weight_by_word(std::string word)
 {
-    update_data(build_sql_for_updating_word(word));
-    reset_cache();
-    return OK;
+    return update_weight_by_pinyin_and_word(remove_delimiters(pinyin_segmentation_), std::move(word));
 }
 
 int QuanpinDictionary::update_weight_by_pinyin_and_word(std::string pinyin, std::string word)
 {
-    update_data(build_sql_for_updating_word(std::move(pinyin), word));
+    pinyin = remove_delimiters(pinyin);
+    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    if (cuts.empty()) return ERROR_CODE;
+    auto segments = cuts.front();
+    const size_t han_count = HelpcodeUtils::count_han_chars(word);
+    if (segments.size() > han_count) segments.resize(han_count);
+    const std::string normalized = quanpin::join_segments(segments);
+    if (update_data(build_sql_for_updating_word(normalized, word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    (void)user_dictionary::record_pinyin_upsert_from_database(db_path_, normalized, word);
     reset_cache();
     return OK;
 }
 
 int QuanpinDictionary::delete_by_pinyin_and_word(std::string pinyin, std::string word)
 {
-    delete_data(build_sql_for_deleting_word(std::move(pinyin), word));
+    pinyin = remove_delimiters(pinyin);
+    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    if (cuts.empty()) return ERROR_CODE;
+    const std::string normalized = quanpin::join_segments(cuts.front());
+    if (delete_data(build_sql_for_deleting_word(normalized, word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    (void)user_dictionary::record_delete(user_dictionary::default_user_db_path(),
+                                         user_dictionary::DictionaryKind::Pinyin, normalized, word);
     reset_cache();
     return OK;
 }
@@ -547,12 +571,9 @@ int QuanpinDictionary::insert_data(const std::string &sql_str)
         (void)0;
         return ERROR_CODE;
     }
-    if (sqlite3_step(stmt) != SQLITE_DONE)
-    {
-        (void)0;
-    }
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
-    return OK;
+    return ok ? OK : ERROR_CODE;
 }
 
 int QuanpinDictionary::update_data(const std::string &sql_str)
@@ -568,12 +589,9 @@ int QuanpinDictionary::update_data(const std::string &sql_str)
         (void)0;
         return ERROR_CODE;
     }
-    if (sqlite3_step(stmt) != SQLITE_DONE)
-    {
-        (void)0;
-    }
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
-    return OK;
+    return ok ? OK : ERROR_CODE;
 }
 
 int QuanpinDictionary::delete_data(const std::string &sql_str)
@@ -589,12 +607,9 @@ int QuanpinDictionary::delete_data(const std::string &sql_str)
         (void)0;
         return ERROR_CODE;
     }
-    if (sqlite3_step(stmt) != SQLITE_DONE)
-    {
-        (void)0;
-    }
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
-    return OK;
+    return ok ? OK : ERROR_CODE;
 }
 
 std::string QuanpinDictionary::build_sql_for_creating_word(const std::string &pinyin)
