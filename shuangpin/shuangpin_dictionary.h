@@ -12,6 +12,7 @@
 #include <string>
 #include <sqlite3.h>
 #include <memory>
+#include <optional>
 #include <boost/algorithm/string.hpp>
 
 class ShuangpinDictionary
@@ -40,6 +41,7 @@ class ShuangpinDictionary
     );
     bool expand_initial_candidates();
     bool expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates);
+    std::optional<WordItem> find_candidate(const std::string &key, const std::string &value);
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
     std::vector<WordItem> generate_for_creating_word(const std::string code);
     int create_word(std::string pinyin, std::string word);

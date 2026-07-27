@@ -10,6 +10,8 @@ class ProviderRegistry
   public:
     explicit ProviderRegistry(const ShuangpinProfile &shuangpin_profile = GetXiaoheShuangpinProfile());
     ICandidateProvider &resolve(SchemeType scheme_type);
+    std::optional<WordItem> find_candidate(SchemeType scheme_type, const std::string &key,
+                                           const std::string &value);
     bool expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates);
     void reset_cache(SchemeType scheme_type);
     int create_word(SchemeType scheme_type, std::string pinyin, std::string word);

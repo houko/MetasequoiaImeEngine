@@ -12,6 +12,7 @@ class ShuangpinEngine
     explicit ShuangpinEngine(const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
     std::vector<WordItem> query(const QueryRequest &request);
     bool expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates);
+    std::optional<WordItem> find_candidate(const std::string &key, const std::string &value);
     int create_word(std::string pinyin, std::string word);
     int update_weight_by_pinyin_and_word(std::string pinyin, std::string word);
     int delete_by_pinyin_and_word(std::string pinyin, std::string word);

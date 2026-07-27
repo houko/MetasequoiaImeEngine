@@ -87,6 +87,14 @@ int PinyinCandidateProvider::cache_dynamic_candidate(SchemeType scheme, const st
     return quanpin_engine_.insert_word_to_series_cache(pinyin, word, source);
 }
 
+std::optional<WordItem> PinyinCandidateProvider::find_candidate(
+    SchemeType scheme, const std::string &key, const std::string &value)
+{
+    return scheme == SchemeType::Shuangpin
+        ? shuangpin_engine_.find_candidate(key, value)
+        : quanpin_engine_.find_candidate(key, value);
+}
+
 int PinyinCandidateProvider::cache_dynamic_candidate_for_request(const QueryRequest &request,
                                                                  const std::string &word,
                                                                  CandidateSource source)

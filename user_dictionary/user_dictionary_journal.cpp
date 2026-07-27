@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <limits>
+#include <mutex>
 
 namespace user_dictionary
 {
@@ -219,11 +220,51 @@ std::string default_user_db_path()
     return base + "\\metasequoiaime\\msime_user.db";
 }
 
+namespace
+{
+sqlite3 *persistent_default_user_database()
+{
+    static std::mutex mutex;
+    static Db database;
+    std::lock_guard lock(mutex);
+    if (!database)
+    {
+        database = open_database(default_user_db_path(), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+        if (database && !ensure_schema(database.get())) database.reset();
+    }
+    return database.get();
+}
+
+class UserDatabase
+{
+public:
+    explicit UserDatabase(const std::string &path)
+    {
+        if (path == default_user_db_path())
+        {
+            db_ = persistent_default_user_database();
+        }
+        else
+        {
+            owned_ = open_database(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+            if (owned_ && ensure_schema(owned_.get())) db_ = owned_.get();
+        }
+    }
+
+    explicit operator bool() const { return db_ != nullptr; }
+    sqlite3 *get() const { return db_; }
+
+private:
+    Db owned_;
+    sqlite3 *db_ = nullptr;
+};
+} // namespace
+
 bool record_upsert(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
                    const std::string &value, std::int64_t weight, const std::string &display)
 {
-    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!db || !ensure_schema(db.get())) return false;
+    UserDatabase db(user_db_path);
+    if (!db) return false;
     auto stmt = prepare_upsert_journal(db.get());
     return stmt && write_upsert_journal(stmt.get(), kind, key, value, weight, display);
 }
@@ -231,8 +272,8 @@ bool record_upsert(const std::string &user_db_path, DictionaryKind kind, const s
 bool record_delete(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
                    const std::string &value)
 {
-    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!db || !ensure_schema(db.get())) return false;
+    UserDatabase db(user_db_path);
+    if (!db) return false;
     auto stmt = prepare(db.get(),
                         "INSERT INTO user_dictionary_operations(dictionary,key,value,operation)"
                         " VALUES(?1,?2,?3,'delete')"
@@ -260,8 +301,8 @@ bool set_fixed_position(const std::string &user_db_path, const std::string &cont
                         const std::string &entry_key, const std::string &value, int position)
 {
     if (position < 1 || position > 5 || context_key.empty() || entry_key.empty() || value.empty()) return false;
-    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!db || !ensure_schema(db.get())) return false;
+    UserDatabase db(user_db_path);
+    if (!db) return false;
     sqlite3_exec(db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
     auto clear_slot = prepare(db.get(), "DELETE FROM fixed_candidate_positions WHERE context_key=?1 AND position=?2");
     auto upsert = prepare(db.get(),
@@ -279,8 +320,8 @@ bool set_fixed_position(const std::string &user_db_path, const std::string &cont
 bool clear_fixed_position(const std::string &user_db_path, const std::string &context_key,
                           const std::string &entry_key, const std::string &value)
 {
-    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!db || !ensure_schema(db.get())) return false;
+    UserDatabase db(user_db_path);
+    if (!db) return false;
     auto stmt = prepare(db.get(), "DELETE FROM fixed_candidate_positions WHERE context_key=?1 AND entry_key=?2 AND value=?3");
     return stmt && bind_text(stmt.get(), 1, context_key) && bind_text(stmt.get(), 2, entry_key) &&
         bind_text(stmt.get(), 3, value) && sqlite3_step(stmt.get()) == SQLITE_DONE;
@@ -289,21 +330,21 @@ bool clear_fixed_position(const std::string &user_db_path, const std::string &co
 bool is_fixed(const std::string &user_db_path, const std::string &context_key,
               const std::string &entry_key, const std::string &value)
 {
-    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!db || !ensure_schema(db.get())) return false;
+    UserDatabase db(user_db_path);
+    if (!db) return false;
     auto stmt = prepare(db.get(), "SELECT 1 FROM fixed_candidate_positions WHERE context_key=?1 AND entry_key=?2 AND value=?3");
     return stmt && bind_text(stmt.get(), 1, context_key) && bind_text(stmt.get(), 2, entry_key) &&
         bind_text(stmt.get(), 3, value) && sqlite3_step(stmt.get()) == SQLITE_ROW;
 }
 
-void apply_fixed_positions(const std::string &main_db_path, const std::string &user_db_path,
-                           const std::string &context_key, std::vector<WordItem> &candidates,
-                           bool include_missing)
+void apply_fixed_positions(
+    const std::string &user_db_path, const std::string &context_key,
+    std::vector<WordItem> &candidates, bool include_missing,
+    const std::function<std::optional<WordItem>(const std::string &, const std::string &)> &find_candidate)
 {
     if (context_key.empty() || candidates.empty()) return;
-    auto user_db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    auto main_db = open_database(main_db_path, SQLITE_OPEN_READONLY);
-    if (!user_db || !main_db || !ensure_schema(user_db.get())) return;
+    UserDatabase user_db(user_db_path);
+    if (!user_db) return;
     auto fixed = prepare(user_db.get(),
         "SELECT entry_key,value,position FROM fixed_candidate_positions WHERE context_key=?1 ORDER BY position");
     if (!fixed || !bind_text(fixed.get(), 1, context_key)) return;
@@ -331,15 +372,11 @@ void apply_fixed_positions(const std::string &main_db_path, const std::string &u
             item.fixed_position = position;
             rows.push_back({std::move(item), position});
         }
-        else if (include_missing)
+        else if (include_missing && find_candidate)
         {
-            const std::string table = pinyin_table(key);
-            if (table.empty()) continue;
-            auto lookup = prepare(main_db.get(), "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1");
-            if (lookup && bind_text(lookup.get(), 1, key) && bind_text(lookup.get(), 2, value) &&
-                sqlite3_step(lookup.get()) == SQLITE_ROW)
+            if (auto found = find_candidate(key, value))
             {
-                WordItem item(key, value, sqlite3_column_int64(lookup.get(), 0));
+                WordItem item = std::move(*found);
                 item.fixed_position = position;
                 rows.push_back({std::move(item), position});
             }
@@ -373,8 +410,8 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         is_fixed(user_db_path, context_key, entry_key, value))
         return false;
     if (!force_top && mode == "disabled") return true;
-    auto user_db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!user_db || !ensure_schema(user_db.get())) return false;
+    UserDatabase user_db(user_db_path);
+    if (!user_db) return false;
     auto journal_upsert = prepare_upsert_journal(user_db.get());
     if (!journal_upsert) return false;
     trigger_count = (std::max)(1, (std::min)(10, trigger_count));

@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <optional>
 #include <windows.h>
 
 class QuanpinDictionary
@@ -20,6 +21,7 @@ class QuanpinDictionary
 
     std::vector<WordItem> query(const std::string &raw_input, const std::string &segmentation = "");
     bool expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates);
+    std::optional<WordItem> find_candidate(const std::string &key, const std::string &value);
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
 
     int create_word(std::string pinyin, std::string word);

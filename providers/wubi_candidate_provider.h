@@ -14,6 +14,10 @@ class WubiCandidateProvider : public ICandidateProvider
     WubiCandidateProvider &operator=(const WubiCandidateProvider &) = delete;
 
     std::vector<WordItem> query(const QueryRequest &request) override;
+    std::optional<WordItem> find_candidate(SchemeType, const std::string &, const std::string &) override
+    {
+        return std::nullopt;
+    }
     void reset_cache() override;
     int create_word(SchemeType scheme, std::string code, std::string word) override;
     int update_weight_by_pinyin_and_word(SchemeType scheme, std::string code, std::string word) override;

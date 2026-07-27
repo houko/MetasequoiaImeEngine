@@ -2,6 +2,8 @@
 
 #include <string>
 #include <vector>
+#include <functional>
+#include <optional>
 #include "../core/word_item.h"
 
 namespace user_dictionary
@@ -44,7 +46,8 @@ bool clear_fixed_position(const std::string &user_db_path, const std::string &co
                           const std::string &entry_key, const std::string &value);
 bool is_fixed(const std::string &user_db_path, const std::string &context_key,
               const std::string &entry_key, const std::string &value);
-void apply_fixed_positions(const std::string &main_db_path, const std::string &user_db_path,
-                           const std::string &context_key, std::vector<WordItem> &candidates,
-                           bool include_missing);
+void apply_fixed_positions(
+    const std::string &user_db_path, const std::string &context_key,
+    std::vector<WordItem> &candidates, bool include_missing,
+    const std::function<std::optional<WordItem>(const std::string &, const std::string &)> &find_candidate = {});
 } // namespace user_dictionary

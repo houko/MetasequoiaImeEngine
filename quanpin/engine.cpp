@@ -7,6 +7,11 @@ QuanpinEngine::QuanpinEngine() = default;
 
 QuanpinEngine::~QuanpinEngine() = default;
 
+std::optional<WordItem> QuanpinEngine::find_candidate(const std::string &key, const std::string &value)
+{
+    return dictionary_.find_candidate(key, value);
+}
+
 std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
 {
     if (!request.valid)

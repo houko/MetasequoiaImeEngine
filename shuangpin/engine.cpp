@@ -132,6 +132,11 @@ ShuangpinEngine::ShuangpinEngine(const ShuangpinProfile &profile) : profile_(pro
 {
 }
 
+std::optional<WordItem> ShuangpinEngine::find_candidate(const std::string &key, const std::string &value)
+{
+    return dictionary_.find_candidate(key, value);
+}
+
 std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
 {
     if (!request.valid)

@@ -141,6 +141,11 @@ const std::vector<WordItem> &ImeSession::get_candidates() const
     return state_.candidates;
 }
 
+std::optional<WordItem> ImeSession::find_candidate(const std::string &key, const std::string &value)
+{
+    return provider_registry_.find_candidate(current_scheme_type(), key, value);
+}
+
 bool ImeSession::expand_initial_candidates()
 {
     return provider_registry_.expand_initial_candidates(state_.request, state_.candidates);

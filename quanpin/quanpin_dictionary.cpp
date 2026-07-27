@@ -111,6 +111,23 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
     return current_candidate_list_;
 }
 
+std::optional<WordItem> QuanpinDictionary::find_candidate(
+    const std::string &key, const std::string &value)
+{
+    const std::string table = quanpin::build_table_name(quanpin::split_segments(key));
+    if (!db_ || table.empty()) return std::nullopt;
+    sqlite3_stmt *stmt = nullptr;
+    const std::string sql =
+        "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1";
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return std::nullopt;
+    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(stmt, sqlite3_finalize);
+    if (sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_step(stmt) != SQLITE_ROW)
+        return std::nullopt;
+    return WordItem(key, value, sqlite3_column_int64(stmt, 0));
+}
+
 bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
 {
     if (code.size() != 1 || candidates.size() != 24)

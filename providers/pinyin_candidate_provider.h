@@ -9,6 +9,8 @@ class PinyinCandidateProvider : public ICandidateProvider
   public:
     explicit PinyinCandidateProvider(const ShuangpinProfile &shuangpin_profile = GetXiaoheShuangpinProfile());
     std::vector<WordItem> query(const QueryRequest &request) override;
+    std::optional<WordItem> find_candidate(SchemeType scheme, const std::string &key,
+                                           const std::string &value) override;
     bool expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates);
     void reset_cache() override;
     int create_word(SchemeType scheme, std::string pinyin, std::string word) override;
