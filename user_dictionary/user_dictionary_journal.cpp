@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <memory>
 #include <vector>
+#include <algorithm>
+#include <limits>
 
 namespace user_dictionary
 {
@@ -64,6 +66,25 @@ bool bind_text(sqlite3_stmt *stmt, int index, const std::string &value)
     return sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
+Stmt prepare_upsert_journal(sqlite3 *db)
+{
+    return prepare(db,
+        "INSERT INTO user_dictionary_operations(dictionary,key,value,operation,weight,display)"
+        " VALUES(?1,?2,?3,'upsert',?4,?5)"
+        " ON CONFLICT(dictionary,key,value) DO UPDATE SET operation='upsert',weight=excluded.weight,"
+        " display=excluded.display,updated_at=unixepoch()");
+}
+
+bool write_upsert_journal(sqlite3_stmt *stmt, DictionaryKind kind, const std::string &key,
+                          const std::string &value, std::int64_t weight, const std::string &display = {})
+{
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return bind_text(stmt, 1, kind_name(kind)) && bind_text(stmt, 2, key) &&
+        bind_text(stmt, 3, value) && sqlite3_bind_int64(stmt, 4, weight) == SQLITE_OK &&
+        bind_text(stmt, 5, display) && sqlite3_step(stmt) == SQLITE_DONE;
+}
+
 bool ensure_schema(sqlite3 *db)
 {
     constexpr const char *sql =
@@ -76,7 +97,15 @@ bool ensure_schema(sqlite3 *db)
         "display TEXT NOT NULL DEFAULT '',"
         "updated_at INTEGER NOT NULL DEFAULT(unixepoch()),"
         "PRIMARY KEY(dictionary,key,value));"
-        "PRAGMA user_version=1;";
+        "CREATE TABLE IF NOT EXISTS candidate_selection_state("
+        "context_key TEXT NOT NULL,entry_key TEXT NOT NULL,value TEXT NOT NULL,"
+        "selection_count INTEGER NOT NULL DEFAULT 0,"
+        "PRIMARY KEY(context_key,entry_key,value));"
+        "CREATE TABLE IF NOT EXISTS fixed_candidate_positions("
+        "context_key TEXT NOT NULL,entry_key TEXT NOT NULL,value TEXT NOT NULL,"
+        "position INTEGER NOT NULL CHECK(position BETWEEN 1 AND 5),"
+        "PRIMARY KEY(context_key,entry_key,value),UNIQUE(context_key,position));"
+        "PRAGMA user_version=2;";
     return sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
@@ -113,7 +142,7 @@ std::string jianpin(const std::vector<std::string> &segments)
 }
 
 bool apply_pinyin(sqlite3 *db, const std::string &key, const std::string &value, const std::string &operation,
-                  int weight)
+                  std::int64_t weight)
 {
     const auto segments = pinyin_segments(key);
     if (segments.empty()) return false;
@@ -127,7 +156,7 @@ bool apply_pinyin(sqlite3 *db, const std::string &key, const std::string &value,
 
     auto update = prepare(db, "UPDATE \"" + table + "\" SET jp=?1,weight=?2 WHERE key=?3 AND value=?4");
     if (!update || !bind_text(update.get(), 1, jianpin(segments)) ||
-        sqlite3_bind_int(update.get(), 2, weight) != SQLITE_OK || !bind_text(update.get(), 3, key) ||
+        sqlite3_bind_int64(update.get(), 2, weight) != SQLITE_OK || !bind_text(update.get(), 3, key) ||
         !bind_text(update.get(), 4, value) || sqlite3_step(update.get()) != SQLITE_DONE)
         return false;
     if (sqlite3_changes(db) > 0) return true;
@@ -135,13 +164,13 @@ bool apply_pinyin(sqlite3 *db, const std::string &key, const std::string &value,
     auto insert = prepare(db, "INSERT INTO \"" + table + "\"(key,jp,value,weight) VALUES(?1,?2,?3,?4)");
     return insert && bind_text(insert.get(), 1, key) &&
            bind_text(insert.get(), 2, jianpin(segments)) &&
-           bind_text(insert.get(), 3, value) && sqlite3_bind_int(insert.get(), 4, weight) == SQLITE_OK &&
+           bind_text(insert.get(), 3, value) && sqlite3_bind_int64(insert.get(), 4, weight) == SQLITE_OK &&
            sqlite3_step(insert.get()) == SQLITE_DONE;
 }
 
 bool apply_simple(sqlite3 *db, const std::string &table, const std::string &key_column,
                   const std::string &value_column, const std::string &key, const std::string &value,
-                  const std::string &operation, int weight)
+                  const std::string &operation, std::int64_t weight)
 {
     if (operation == "delete")
     {
@@ -152,14 +181,14 @@ bool apply_simple(sqlite3 *db, const std::string &table, const std::string &key_
     }
     auto update = prepare(db, "UPDATE \"" + table + "\" SET weight=?1 WHERE \"" + key_column +
                                   "\"=?2 AND \"" + value_column + "\"=?3");
-    if (!update || sqlite3_bind_int(update.get(), 1, weight) != SQLITE_OK || !bind_text(update.get(), 2, key) ||
+    if (!update || sqlite3_bind_int64(update.get(), 1, weight) != SQLITE_OK || !bind_text(update.get(), 2, key) ||
         !bind_text(update.get(), 3, value) || sqlite3_step(update.get()) != SQLITE_DONE)
         return false;
     if (sqlite3_changes(db) > 0) return true;
     auto insert = prepare(db, "INSERT INTO \"" + table + "\"(\"" + key_column + "\",\"" + value_column +
                                   "\",weight) VALUES(?1,?2,?3)");
     return insert && bind_text(insert.get(), 1, key) && bind_text(insert.get(), 2, value) &&
-           sqlite3_bind_int(insert.get(), 3, weight) == SQLITE_OK && sqlite3_step(insert.get()) == SQLITE_DONE;
+           sqlite3_bind_int64(insert.get(), 3, weight) == SQLITE_OK && sqlite3_step(insert.get()) == SQLITE_DONE;
 }
 
 bool apply_english(sqlite3 *db, const std::string &key, const std::string &operation, const std::string &display)
@@ -191,18 +220,12 @@ std::string default_user_db_path()
 }
 
 bool record_upsert(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
-                   const std::string &value, int weight, const std::string &display)
+                   const std::string &value, std::int64_t weight, const std::string &display)
 {
     auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
     if (!db || !ensure_schema(db.get())) return false;
-    auto stmt = prepare(db.get(),
-                        "INSERT INTO user_dictionary_operations(dictionary,key,value,operation,weight,display)"
-                        " VALUES(?1,?2,?3,'upsert',?4,?5)"
-                        " ON CONFLICT(dictionary,key,value) DO UPDATE SET operation='upsert',weight=excluded.weight,"
-                        " display=excluded.display,updated_at=unixepoch()");
-    return stmt && bind_text(stmt.get(), 1, kind_name(kind)) && bind_text(stmt.get(), 2, key) &&
-           bind_text(stmt.get(), 3, value) && sqlite3_bind_int(stmt.get(), 4, weight) == SQLITE_OK &&
-           bind_text(stmt.get(), 5, display) && sqlite3_step(stmt.get()) == SQLITE_DONE;
+    auto stmt = prepare_upsert_journal(db.get());
+    return stmt && write_upsert_journal(stmt.get(), kind, key, value, weight, display);
 }
 
 bool record_delete(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
@@ -230,7 +253,265 @@ bool record_pinyin_upsert_from_database(const std::string &main_db_path, const s
         sqlite3_step(stmt.get()) != SQLITE_ROW)
         return false;
     return record_upsert(default_user_db_path(), DictionaryKind::Pinyin, key, value,
-                         sqlite3_column_int(stmt.get(), 0));
+                         sqlite3_column_int64(stmt.get(), 0));
+}
+
+bool set_fixed_position(const std::string &user_db_path, const std::string &context_key,
+                        const std::string &entry_key, const std::string &value, int position)
+{
+    if (position < 1 || position > 5 || context_key.empty() || entry_key.empty() || value.empty()) return false;
+    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+    if (!db || !ensure_schema(db.get())) return false;
+    sqlite3_exec(db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+    auto clear_slot = prepare(db.get(), "DELETE FROM fixed_candidate_positions WHERE context_key=?1 AND position=?2");
+    auto upsert = prepare(db.get(),
+        "INSERT INTO fixed_candidate_positions(context_key,entry_key,value,position) VALUES(?1,?2,?3,?4)"
+        " ON CONFLICT(context_key,entry_key,value) DO UPDATE SET position=excluded.position");
+    const bool ok = clear_slot && upsert && bind_text(clear_slot.get(), 1, context_key) &&
+        sqlite3_bind_int(clear_slot.get(), 2, position) == SQLITE_OK && sqlite3_step(clear_slot.get()) == SQLITE_DONE &&
+        bind_text(upsert.get(), 1, context_key) && bind_text(upsert.get(), 2, entry_key) &&
+        bind_text(upsert.get(), 3, value) && sqlite3_bind_int(upsert.get(), 4, position) == SQLITE_OK &&
+        sqlite3_step(upsert.get()) == SQLITE_DONE;
+    sqlite3_exec(db.get(), ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok;
+}
+
+bool clear_fixed_position(const std::string &user_db_path, const std::string &context_key,
+                          const std::string &entry_key, const std::string &value)
+{
+    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+    if (!db || !ensure_schema(db.get())) return false;
+    auto stmt = prepare(db.get(), "DELETE FROM fixed_candidate_positions WHERE context_key=?1 AND entry_key=?2 AND value=?3");
+    return stmt && bind_text(stmt.get(), 1, context_key) && bind_text(stmt.get(), 2, entry_key) &&
+        bind_text(stmt.get(), 3, value) && sqlite3_step(stmt.get()) == SQLITE_DONE;
+}
+
+bool is_fixed(const std::string &user_db_path, const std::string &context_key,
+              const std::string &entry_key, const std::string &value)
+{
+    auto db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+    if (!db || !ensure_schema(db.get())) return false;
+    auto stmt = prepare(db.get(), "SELECT 1 FROM fixed_candidate_positions WHERE context_key=?1 AND entry_key=?2 AND value=?3");
+    return stmt && bind_text(stmt.get(), 1, context_key) && bind_text(stmt.get(), 2, entry_key) &&
+        bind_text(stmt.get(), 3, value) && sqlite3_step(stmt.get()) == SQLITE_ROW;
+}
+
+void apply_fixed_positions(const std::string &main_db_path, const std::string &user_db_path,
+                           const std::string &context_key, std::vector<WordItem> &candidates,
+                           bool include_missing)
+{
+    if (context_key.empty() || candidates.empty()) return;
+    auto user_db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+    auto main_db = open_database(main_db_path, SQLITE_OPEN_READONLY);
+    if (!user_db || !main_db || !ensure_schema(user_db.get())) return;
+    auto fixed = prepare(user_db.get(),
+        "SELECT entry_key,value,position FROM fixed_candidate_positions WHERE context_key=?1 ORDER BY position");
+    if (!fixed || !bind_text(fixed.get(), 1, context_key)) return;
+    std::vector<WordItem> dynamic_candidates;
+    candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](const WordItem &item) {
+        if (item.source != CandidateSource::CloudSuggestion && item.source != CandidateSource::AiSuggestion)
+            return false;
+        dynamic_candidates.push_back(item);
+        return true;
+    }), candidates.end());
+
+    struct Fixed { WordItem item; int position; };
+    std::vector<Fixed> rows;
+    while (sqlite3_step(fixed.get()) == SQLITE_ROW)
+    {
+        const std::string key = reinterpret_cast<const char *>(sqlite3_column_text(fixed.get(), 0));
+        const std::string value = reinterpret_cast<const char *>(sqlite3_column_text(fixed.get(), 1));
+        const int position = sqlite3_column_int(fixed.get(), 2);
+        const auto existing = std::find_if(candidates.begin(), candidates.end(), [&](const WordItem &item) {
+            return item.word == value;
+        });
+        if (existing != candidates.end())
+        {
+            WordItem item = *existing;
+            item.fixed_position = position;
+            rows.push_back({std::move(item), position});
+        }
+        else if (include_missing)
+        {
+            const std::string table = pinyin_table(key);
+            if (table.empty()) continue;
+            auto lookup = prepare(main_db.get(), "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1");
+            if (lookup && bind_text(lookup.get(), 1, key) && bind_text(lookup.get(), 2, value) &&
+                sqlite3_step(lookup.get()) == SQLITE_ROW)
+            {
+                WordItem item(key, value, sqlite3_column_int64(lookup.get(), 0));
+                item.fixed_position = position;
+                rows.push_back({std::move(item), position});
+            }
+        }
+    }
+    for (const auto &row : rows)
+        candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](const WordItem &item) {
+            return item.word == row.item.word;
+        }), candidates.end());
+    for (const auto &row : rows)
+    {
+        const size_t index = (std::min)(static_cast<size_t>(row.position - 1), candidates.size());
+        candidates.insert(candidates.begin() + index, row.item);
+    }
+    for (const auto &item : dynamic_candidates)
+    {
+        const size_t preferred_index = item.source == CandidateSource::CloudSuggestion ? 1 : 2;
+        const size_t index = (std::min)(preferred_index, candidates.size());
+        candidates.insert(candidates.begin() + index, item);
+    }
+}
+
+bool adjust_candidate_ranking(const std::string &main_db_path, const std::string &user_db_path,
+                              const std::string &context_key, const std::vector<WordItem> &ordered_candidates,
+                              const std::string &entry_key, const std::string &value,
+                              const std::string &mode, int linear_step, int trigger_count, bool force_top,
+                              bool *ranking_changed)
+{
+    if (ranking_changed) *ranking_changed = false;
+    if (entry_key.empty() || value.empty() || ordered_candidates.empty() ||
+        is_fixed(user_db_path, context_key, entry_key, value))
+        return false;
+    if (!force_top && mode == "disabled") return true;
+    auto user_db = open_database(user_db_path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+    if (!user_db || !ensure_schema(user_db.get())) return false;
+    auto journal_upsert = prepare_upsert_journal(user_db.get());
+    if (!journal_upsert) return false;
+    trigger_count = (std::max)(1, (std::min)(10, trigger_count));
+    if (!force_top)
+    {
+        auto counter = prepare(user_db.get(),
+            "INSERT INTO candidate_selection_state(context_key,entry_key,value,selection_count) VALUES(?1,?2,?3,1)"
+            " ON CONFLICT(context_key,entry_key,value) DO UPDATE SET selection_count=selection_count+1"
+            " RETURNING selection_count");
+        if (!counter || !bind_text(counter.get(), 1, context_key) || !bind_text(counter.get(), 2, entry_key) ||
+            !bind_text(counter.get(), 3, value) || sqlite3_step(counter.get()) != SQLITE_ROW)
+            return false;
+        if (sqlite3_column_int(counter.get(), 0) < trigger_count) return true;
+    }
+
+    std::vector<WordItem> database_candidates;
+    for (const auto &item : ordered_candidates)
+        if (item.source == CandidateSource::Database || item.source == CandidateSource::UserDatabase)
+            database_candidates.push_back(item);
+    const auto selected = std::find_if(database_candidates.begin(), database_candidates.end(), [&](const WordItem &item) {
+        return item.word == value;
+    });
+    if (selected == database_candidates.end()) return false;
+    const size_t rank = static_cast<size_t>(selected - database_candidates.begin());
+    if (rank == 0)
+    {
+        auto reset = prepare(user_db.get(), "DELETE FROM candidate_selection_state WHERE context_key=?1 AND entry_key=?2 AND value=?3");
+        if (reset) { bind_text(reset.get(),1,context_key); bind_text(reset.get(),2,entry_key); bind_text(reset.get(),3,value); sqlite3_step(reset.get()); }
+        return true;
+    }
+    size_t target = 0;
+    if (!force_top && mode == "halve") target = rank / 2;
+    else if (!force_top && mode == "linear") target = rank > static_cast<size_t>(linear_step) ? rank - linear_step : 0;
+    else if (!force_top && mode == "promote") target = rank > 4 ? 4 : rank - 1;
+    auto main_db = open_database(main_db_path, SQLITE_OPEN_READWRITE);
+    if (!main_db) return false;
+    std::int64_t new_weight = 0;
+    const bool top_near_limit = target == 0 &&
+        database_candidates[0].weight > (std::numeric_limits<std::int64_t>::max)() - 1000;
+    const std::int64_t upper = target == 0 && !top_near_limit
+        ? database_candidates[0].weight + 1000
+        : (target == 0 ? database_candidates[0].weight : database_candidates[target - 1].weight);
+    const std::int64_t lower = database_candidates[target].weight;
+    bool need_rebalance = top_near_limit || lower == (std::numeric_limits<std::int64_t>::max)() ||
+        upper <= lower || upper > 4000000000000000000LL;
+    if (!need_rebalance)
+    {
+        if (upper == lower + 1)
+        {
+            // There is no integer midpoint. Move one point above the upper
+            // candidate and skip a short run of occupied weights. This may
+            // advance one extra position, but keeps ordering deterministic
+            // without paying for a rebalance in the common case.
+            new_weight = upper + 1;
+            size_t conflicts = 0;
+            for (size_t i = target; i-- > 0;)
+            {
+                const std::int64_t occupied = database_candidates[i].weight;
+                if (occupied < new_weight) continue;
+                if (occupied > new_weight) break;
+                if (++conflicts >= 16 || new_weight >= 4000000000000000000LL)
+                {
+                    need_rebalance = true;
+                    break;
+                }
+                ++new_weight;
+            }
+        }
+        else
+        {
+            new_weight = lower + (upper - lower) / 2;
+        }
+    }
+    if (need_rebalance)
+    {
+        constexpr std::int64_t gap = 1000000LL;
+        constexpr size_t rebalance_count = 16;
+        const size_t rebalance_begin = target;
+        const size_t rebalance_end =
+            (std::min)(database_candidates.size(), rebalance_begin + rebalance_count);
+        const std::int64_t base = target == 0 || top_near_limit || upper > 4000000000000000000LL
+            ? 1000000000000LL
+            : upper + static_cast<std::int64_t>(target) * gap - gap;
+        sqlite3_exec(main_db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+        sqlite3_exec(user_db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+        for (size_t i = rebalance_begin; i < rebalance_end; ++i)
+        {
+            const auto &item = database_candidates[i];
+            std::string item_key = item.pinyin;
+            const auto context_segments = pinyin_segments(context_key);
+            if (context_segments.size() > 1)
+            {
+                auto item_segments = context_segments;
+                const size_t char_count = static_cast<size_t>(
+                    std::count_if(item.word.begin(), item.word.end(), [](unsigned char ch) { return (ch & 0xC0) != 0x80; }));
+                if (char_count > 0 && item_segments.size() > char_count) item_segments.resize(char_count);
+                item_key.clear();
+                for (size_t j = 0; j < item_segments.size(); ++j)
+                {
+                    if (j) item_key += '\'';
+                    item_key += item_segments[j];
+                }
+            }
+            const std::string table = pinyin_table(item_key);
+            auto stmt = prepare(main_db.get(), "UPDATE \"" + table + "\" SET weight=?1 WHERE key=?2 AND value=?3");
+            const std::int64_t weight = base - static_cast<std::int64_t>(i) * gap;
+            if (!stmt || sqlite3_bind_int64(stmt.get(),1,weight) != SQLITE_OK || !bind_text(stmt.get(),2,item_key) ||
+                !bind_text(stmt.get(),3,item.word) || sqlite3_step(stmt.get()) != SQLITE_DONE)
+            {
+                sqlite3_exec(main_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
+                sqlite3_exec(user_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
+                return false;
+            }
+            if (!write_upsert_journal(journal_upsert.get(), DictionaryKind::Pinyin, item_key, item.word, weight))
+            {
+                sqlite3_exec(main_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
+                sqlite3_exec(user_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
+                return false;
+            }
+        }
+        sqlite3_exec(main_db.get(), "COMMIT", nullptr, nullptr, nullptr);
+        sqlite3_exec(user_db.get(), "COMMIT", nullptr, nullptr, nullptr);
+        new_weight = target == 0 ? base + gap : base - static_cast<std::int64_t>(target) * gap + gap / 2;
+    }
+    const std::string table = pinyin_table(entry_key);
+    auto update = prepare(main_db.get(), "UPDATE \"" + table + "\" SET weight=?1 WHERE key=?2 AND value=?3");
+    const bool ok = update && sqlite3_bind_int64(update.get(),1,new_weight) == SQLITE_OK &&
+        bind_text(update.get(),2,entry_key) && bind_text(update.get(),3,value) && sqlite3_step(update.get()) == SQLITE_DONE;
+    if (ok)
+    {
+        if (ranking_changed) *ranking_changed = true;
+        (void)write_upsert_journal(
+            journal_upsert.get(), DictionaryKind::Pinyin, entry_key, value, new_weight);
+        auto reset = prepare(user_db.get(), "DELETE FROM candidate_selection_state WHERE context_key=?1 AND entry_key=?2 AND value=?3");
+        if (reset) { bind_text(reset.get(),1,context_key); bind_text(reset.get(),2,entry_key); bind_text(reset.get(),3,value); sqlite3_step(reset.get()); }
+    }
+    return ok;
 }
 
 ReplayResult replay(const std::string &user_db_path, const std::string &main_db_path,
@@ -268,7 +549,7 @@ ReplayResult replay(const std::string &user_db_path, const std::string &main_db_
         const std::string key = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 1));
         const std::string value = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 2));
         const std::string operation = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 3));
-        const int weight = sqlite3_column_int(rows.get(), 4);
+        const std::int64_t weight = sqlite3_column_int64(rows.get(), 4);
         const std::string display = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 5));
         bool ok = false;
         if (kind == "pinyin") ok = apply_pinyin(main_db.get(), key, value, operation, weight);

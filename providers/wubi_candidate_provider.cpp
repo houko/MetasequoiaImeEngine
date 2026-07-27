@@ -43,7 +43,7 @@ std::vector<WordItem> WubiCandidateProvider::query(const QueryRequest &request)
         {
             continue;
         }
-        candidates.emplace_back(key, value, sqlite3_column_int(query_statement_, 2));
+        candidates.emplace_back(key, value, sqlite3_column_int64(query_statement_, 2));
     }
 
     if (result != SQLITE_DONE)

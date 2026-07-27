@@ -235,7 +235,7 @@ std::vector<QueryItem> run_query(sqlite3 *db, const std::string &sql, const std:
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const unsigned char *text = sqlite3_column_text(stmt, 0);
-        const int weight = sqlite3_column_int(stmt, 1);
+        const std::int64_t weight = sqlite3_column_int64(stmt, 1);
         rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
     }
     sqlite3_finalize(stmt);
@@ -272,7 +272,7 @@ std::vector<QueryItem> run_query(sqlite3 *db,
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const unsigned char *text = sqlite3_column_text(stmt, 0);
-        const int weight = sqlite3_column_int(stmt, 1);
+        const std::int64_t weight = sqlite3_column_int64(stmt, 1);
         rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
     }
     sqlite3_reset(stmt);
@@ -300,7 +300,7 @@ std::vector<QueryItem> run_query(sqlite3 *db,
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const unsigned char *text = sqlite3_column_text(stmt, 0);
-        const int weight = sqlite3_column_int(stmt, 1);
+        const std::int64_t weight = sqlite3_column_int64(stmt, 1);
         rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
     }
     sqlite3_finalize(stmt);
@@ -339,7 +339,7 @@ std::vector<QueryItem> run_query(sqlite3 *db,
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const unsigned char *text = sqlite3_column_text(stmt, 0);
-        const int weight = sqlite3_column_int(stmt, 1);
+        const std::int64_t weight = sqlite3_column_int64(stmt, 1);
         rows.emplace_back(text == nullptr ? "" : reinterpret_cast<const char *>(text), weight);
     }
     sqlite3_reset(stmt);
@@ -363,7 +363,7 @@ std::vector<KeyedQueryItem> run_keyed_query(sqlite3 *db, const std::string &sql,
     {
         const unsigned char *key = sqlite3_column_text(stmt, 0);
         const unsigned char *value_text = sqlite3_column_text(stmt, 1);
-        const int weight = sqlite3_column_int(stmt, 2);
+        const std::int64_t weight = sqlite3_column_int64(stmt, 2);
         rows.push_back(KeyedQueryItem{
             key == nullptr ? "" : reinterpret_cast<const char *>(key),
             value_text == nullptr ? "" : reinterpret_cast<const char *>(value_text),
@@ -405,7 +405,7 @@ std::vector<KeyedQueryItem> run_keyed_query(sqlite3 *db,
     {
         const unsigned char *key = sqlite3_column_text(stmt, 0);
         const unsigned char *value_text = sqlite3_column_text(stmt, 1);
-        const int weight = sqlite3_column_int(stmt, 2);
+        const std::int64_t weight = sqlite3_column_int64(stmt, 2);
         rows.push_back(KeyedQueryItem{
             key == nullptr ? "" : reinterpret_cast<const char *>(key),
             value_text == nullptr ? "" : reinterpret_cast<const char *>(value_text),
@@ -707,7 +707,7 @@ std::vector<KeyedQueryItem> query_initial(sqlite3 *db, const std::string &prefix
         const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         rows.push_back(KeyedQueryItem{key == nullptr ? "" : key,
                                       value == nullptr ? "" : value,
-                                      sqlite3_column_int(stmt, 2)});
+                                      sqlite3_column_int64(stmt, 2)});
     }
     sqlite3_finalize(stmt);
     return rows;

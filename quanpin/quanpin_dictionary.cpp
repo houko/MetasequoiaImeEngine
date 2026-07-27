@@ -533,7 +533,7 @@ std::vector<WordItem> QuanpinDictionary::select_complete_data(const std::string 
     {
         candidate_list.emplace_back(std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))),
                                     std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))),
-                                    sqlite3_column_int(stmt, 3));
+                                    sqlite3_column_int64(stmt, 3));
     }
     sqlite3_finalize(stmt);
     return candidate_list;

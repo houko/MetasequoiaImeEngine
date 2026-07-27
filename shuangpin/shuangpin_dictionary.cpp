@@ -837,7 +837,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(
         candidateList.emplace_back(                                               //
             string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))), // key
             string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))), // value
-            sqlite3_column_int(stmt, 3));                                         // weight
+            sqlite3_column_int64(stmt, 3));                                         // weight
     }
     sqlite3_finalize(stmt);
     return candidateList;

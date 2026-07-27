@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include "../core/word_item.h"
 
 namespace user_dictionary
 {
@@ -15,7 +17,7 @@ enum class DictionaryKind
 std::string default_user_db_path();
 
 bool record_upsert(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
-                   const std::string &value, int weight, const std::string &display = {});
+                   const std::string &value, std::int64_t weight, const std::string &display = {});
 bool record_delete(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
                    const std::string &value);
 bool record_pinyin_upsert_from_database(const std::string &main_db_path, const std::string &key,
@@ -30,4 +32,19 @@ struct ReplayResult
 
 ReplayResult replay(const std::string &user_db_path, const std::string &main_db_path,
                     const std::string &english_db_path);
+
+bool adjust_candidate_ranking(const std::string &main_db_path, const std::string &user_db_path,
+                              const std::string &context_key, const std::vector<WordItem> &ordered_candidates,
+                              const std::string &entry_key, const std::string &value,
+                              const std::string &mode, int linear_step, int trigger_count, bool force_top,
+                              bool *ranking_changed = nullptr);
+bool set_fixed_position(const std::string &user_db_path, const std::string &context_key,
+                        const std::string &entry_key, const std::string &value, int position);
+bool clear_fixed_position(const std::string &user_db_path, const std::string &context_key,
+                          const std::string &entry_key, const std::string &value);
+bool is_fixed(const std::string &user_db_path, const std::string &context_key,
+              const std::string &entry_key, const std::string &value);
+void apply_fixed_positions(const std::string &main_db_path, const std::string &user_db_path,
+                           const std::string &context_key, std::vector<WordItem> &candidates,
+                           bool include_missing);
 } // namespace user_dictionary

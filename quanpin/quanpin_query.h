@@ -6,18 +6,19 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdint>
 
 namespace quanpin
 {
 
 using Segments = std::vector<std::string>;
-using QueryItem = std::pair<std::string, int>;
+using QueryItem = std::pair<std::string, std::int64_t>;
 
 struct KeyedQueryItem
 {
     std::string key;
     std::string value;
-    int weight = 0;
+    std::int64_t weight = 0;
 };
 
 enum class QuerySource
