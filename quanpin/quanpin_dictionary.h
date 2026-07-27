@@ -19,6 +19,7 @@ class QuanpinDictionary
     ~QuanpinDictionary();
 
     std::vector<WordItem> query(const std::string &raw_input, const std::string &segmentation = "");
+    bool expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates);
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
 
     int create_word(std::string pinyin, std::string word);
@@ -58,6 +59,7 @@ class QuanpinDictionary
     quanpin::Segments resolve_segments(const std::string &raw_input, const std::string &segmentation);
     quanpin::Segments get_or_compute_segments(const std::string &raw_input);
     std::vector<WordItem> query_database(const quanpin::Segments &segments, const std::string &segmentation);
+    std::vector<WordItem> query_initial(const std::string &code, int limit);
     std::vector<WordItem> append_ime_fallback(const std::string &raw_input, const std::string &segmentation,
                                               std::vector<WordItem> result);
     std::vector<WordItem> append_sparse_pinyin_fallbacks(const quanpin::Segments &segments, std::vector<WordItem> result);

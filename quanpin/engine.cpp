@@ -42,6 +42,15 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
     return dictionary_.query(request.raw_input, request.segmentation);
 }
 
+bool QuanpinEngine::expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates)
+{
+    if (request.scheme != SchemeType::Quanpin || request.raw_input.size() != 1 || candidates.size() != 24)
+    {
+        return false;
+    }
+    return dictionary_.expand_initial_candidates(request.raw_input, candidates);
+}
+
 int QuanpinEngine::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
 {
     return dictionary_.handleVkCode(vk, modifiers_down, wch);

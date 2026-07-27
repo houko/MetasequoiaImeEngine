@@ -141,6 +141,11 @@ const std::vector<WordItem> &ImeSession::get_candidates() const
     return state_.candidates;
 }
 
+bool ImeSession::expand_initial_candidates()
+{
+    return provider_registry_.expand_initial_candidates(state_.request, state_.candidates);
+}
+
 void ImeSession::refresh_candidates()
 {
     state_.preedit = scheme_->get_preedit();

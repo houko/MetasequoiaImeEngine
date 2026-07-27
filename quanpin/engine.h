@@ -14,6 +14,7 @@ class QuanpinEngine
     ~QuanpinEngine();
 
     std::vector<WordItem> query(const QueryRequest &request);
+    bool expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates);
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
     int create_word(std::string pinyin, std::string word);
     int update_weight_by_word(std::string word);

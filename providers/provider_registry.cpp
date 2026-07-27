@@ -56,6 +56,12 @@ int ProviderRegistry::cache_dynamic_candidate(SchemeType scheme_type, const std:
     return resolve(scheme_type).cache_dynamic_candidate(scheme_type, pinyin, word, source);
 }
 
+bool ProviderRegistry::expand_initial_candidates(const QueryRequest &request,
+                                                 std::vector<WordItem> &candidates)
+{
+    return pinyin_provider_.expand_initial_candidates(request, candidates);
+}
+
 int ProviderRegistry::cache_dynamic_candidate_for_request(const QueryRequest &request, const std::string &word,
                                                           CandidateSource source)
 {

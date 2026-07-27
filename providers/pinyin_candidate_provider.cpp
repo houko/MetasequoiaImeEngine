@@ -30,6 +30,20 @@ std::vector<WordItem> PinyinCandidateProvider::query(const QueryRequest &request
     return {};
 }
 
+bool PinyinCandidateProvider::expand_initial_candidates(const QueryRequest &request,
+                                                        std::vector<WordItem> &candidates)
+{
+    if (request.scheme == SchemeType::Shuangpin)
+    {
+        return shuangpin_engine_.expand_initial_candidates(request, candidates);
+    }
+    if (request.scheme == SchemeType::Quanpin)
+    {
+        return quanpin_engine_.expand_initial_candidates(request, candidates);
+    }
+    return false;
+}
+
 void PinyinCandidateProvider::reset_cache()
 {
     quanpin_engine_.reset_cache();

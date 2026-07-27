@@ -110,6 +110,26 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
     return current_candidate_list_;
 }
 
+bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
+{
+    if (code.size() != 1 || candidates.size() != 24)
+    {
+        return false;
+    }
+
+    auto expanded = query_initial(code, INT_MAX);
+    if (expanded.size() <= candidates.size())
+    {
+        return false;
+    }
+
+    candidates = expanded;
+    cache_.insert(code, expanded);
+    series_cache_.insert(code, expanded);
+    current_candidate_list_ = std::move(expanded);
+    return true;
+}
+
 std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_input,
                                                       const std::string &segmentation,
                                                       const quanpin::Segments &segments)
@@ -226,6 +246,12 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
 
     try
     {
+        if (segments.size() == 1 && segments.front().size() == 1)
+        {
+            constexpr int kInitialCandidateLimit = 24;
+            return query_initial(segments.front(), kInitialCandidateLimit);
+        }
+
         const auto flat_items =
             quanpin::query_segments_flat(segments, db_, statement_cache_, INT_MAX);
         std::vector<WordItem> result;
@@ -242,6 +268,23 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
         (void)0;
         return {};
     }
+}
+
+std::vector<WordItem> QuanpinDictionary::query_initial(const std::string &code, int limit)
+{
+    if (db_ == nullptr || code.size() != 1)
+    {
+        return {};
+    }
+
+    const auto rows = quanpin::query_initial(db_, code, limit);
+    std::vector<WordItem> result;
+    result.reserve(rows.size());
+    for (const auto &item : rows)
+    {
+        result.emplace_back(item.key, item.value, item.weight);
+    }
+    return result;
 }
 
 std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &raw_input,

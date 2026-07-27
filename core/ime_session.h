@@ -32,6 +32,7 @@ class ImeSession
     const std::string &get_preedit() const;
     const QueryRequest &get_request() const;
     const std::vector<WordItem> &get_candidates() const;
+    bool expand_initial_candidates();
 
   private:
     void refresh_candidates();

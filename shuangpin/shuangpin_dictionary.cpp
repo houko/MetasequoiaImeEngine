@@ -43,40 +43,6 @@ std::string escape_sql_text(std::string text)
 
 } // namespace
 
-vector<string> ShuangpinDictionary::alpha_list{
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", //
-    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"  //
-};
-
-vector<string> ShuangpinDictionary::single_han_list{
-    "啊按爱安暗阿案艾傲奥", //
-    "把被不本边吧白别部比", //
-    "从才此次错曾存草刺层", //
-    "的到大地地但得得对多", //
-    "嗯嗯而儿二尔饿呃恶耳", //
-    "放发法分风飞反非服房", //
-    "个过国给高感光果公更", //
-    "或好会还后和很话回行", //
-    "成长出处常吃场车城传", //
-    "就级集家经见间几进将", //
-    "看开口快空可刻苦克客", //
-    "来里老啦了两力连理脸", //
-    "吗没面明门名马美命目", //
-    "那年女难内你男哪拿南", //
-    "哦噢欧偶呕殴鸥藕区怄", //
-    "平怕片跑破旁朋品派皮", //
-    "请去起前气其却全轻清", //
-    "人然如让日入任认容若", //
-    "所三色死四思算虽似斯", //
-    "他她天头同听太特它通", //
-    "是说上时神深手生事声", //
-    "这中只知真长正种主住", //
-    "我为无问外王位文望完", //
-    "下小想些笑行向学新相", //
-    "一有也要以样已又意于", //
-    "在子自做走再最怎作总"  //
-};
-
 ShuangpinDictionary::ShuangpinDictionary(const ShuangpinProfile &profile)
     : profile_(profile), _kb_input_sequence(100), _cached_buffer(128), _cached_buffer_sgl(128), _cached_buffer_dbl(128),
       _cached_buffer_series(128)
@@ -482,13 +448,30 @@ std::string VkSequenceToString(const UINT *vk_codes, size_t count)
 
 void ShuangpinDictionary::generate_for_single_char(vector<ShuangpinDictionary::WordItem> &candidate_list, string code)
 {
-    string s = single_han_list[code[0] - 'a'];
-    for (size_t i = 0; i < s.length();)
+    constexpr int kInitialCandidateLimit = 24;
+    candidate_list = query_initial_from_quanpin_database(code, kInitialCandidateLimit);
+}
+
+bool ShuangpinDictionary::expand_initial_candidates()
+{
+    return expand_initial_candidates(_pinyin_sequence, _cur_candidate_list);
+}
+
+bool ShuangpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
+{
+    if (code.size() != 1 || candidates.size() != 24)
     {
-        size_t cplen = ShuangpinUtil::get_first_char_size(s.substr(i, s.size() - i));
-        candidate_list.emplace_back(code, s.substr(i, cplen), 1, CandidateSource::Fallback);
-        i += cplen;
+        return false;
     }
+
+    auto expanded = query_initial_from_quanpin_database(code, INT_MAX);
+    if (expanded.size() <= candidates.size())
+    {
+        return false;
+    }
+
+    candidates = std::move(expanded);
+    return true;
 }
 
 /**
@@ -791,6 +774,27 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
         (void)0;
     }
 
+    return candidate_list;
+}
+
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_initial_from_quanpin_database(
+    const std::string &code, int limit)
+{
+    if (quanpin_db_ == nullptr || code.size() != 1 || code.front() < 'a' || code.front() > 'z')
+    {
+        return {};
+    }
+
+    const std::string initial =
+        ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(code, profile_);
+    const auto rows = quanpin::query_initial(quanpin_db_, initial, limit);
+
+    vector<WordItem> candidate_list;
+    candidate_list.reserve(rows.size());
+    for (const auto &item : rows)
+    {
+        candidate_list.emplace_back(item.key, item.value, item.weight);
+    }
     return candidate_list;
 }
 

@@ -177,6 +177,17 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
     return query_normal(dictionary_, request, profile_);
 }
 
+bool ShuangpinEngine::expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates)
+{
+    const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
+    if (request.scheme != SchemeType::Shuangpin || pure_input.size() != 1 || candidates.size() != 24)
+    {
+        return false;
+    }
+
+    return dictionary_.expand_initial_candidates(pure_input, candidates);
+}
+
 int ShuangpinEngine::create_word(std::string pinyin, std::string word)
 {
     return dictionary_.create_word(std::move(pinyin), std::move(word));

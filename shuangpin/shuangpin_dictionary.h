@@ -38,6 +38,8 @@ class ShuangpinDictionary
         const std::string &pinyin_sequence,          //
         const std::string &help_codes                //
     );
+    bool expand_initial_candidates();
+    bool expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates);
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
     std::vector<WordItem> generate_for_creating_word(const std::string code);
     int create_word(std::string pinyin, std::string word);
@@ -65,9 +67,6 @@ class ShuangpinDictionary
     sqlite3 *quanpin_db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt *> quanpin_statement_cache_;
 
-    static std::vector<std::string> alpha_list;
-    static std::vector<std::string> single_han_list;
-
     void generate_for_single_char(std::vector<WordItem> &candidate_list, std::string code);
     void filter_with_single_helpcode(                //
         const std::vector<WordItem> &candidate_list, //
@@ -87,6 +86,7 @@ class ShuangpinDictionary
     int delete_data(sqlite3 *target_db, const std::string &sql_str);
     std::vector<WordItem> query_from_quanpin_database(const std::string &pinyin_sequence,
                                                       const std::string &pinyin_segmentation);
+    std::vector<WordItem> query_initial_from_quanpin_database(const std::string &code, int limit);
     std::string normalize_shuangpin_to_quanpin_segmentation(const std::string &pinyin) const;
     std::string normalize_shuangpin_to_quanpin_input(const std::string &pinyin) const;
     std::string build_quanpin_sql_for_creating_word(const std::string &pinyin) const;

@@ -108,13 +108,6 @@ bool needs_mixed_jianpin_query(const Segments &segments, QuerySource source)
     });
 }
 
-struct KeyedQueryItem
-{
-    std::string key;
-    std::string value;
-    int weight = 0;
-};
-
 std::string extract_initial_token(const std::string &segment)
 {
     if (segment.size() >= 2)
@@ -684,6 +677,40 @@ void warm_up(sqlite3 *db, std::unordered_map<std::string, sqlite3_stmt *> &state
     // Warm the most common single-syllable prefixes to hide first-query setup costs.
     (void)query_single_cut(db, statement_cache, Segments{"n"}, 1, QuerySource::Quanpin);
     (void)query_single_cut(db, statement_cache, Segments{"ni"}, 1, QuerySource::Quanpin);
+}
+
+std::vector<KeyedQueryItem> query_initial(sqlite3 *db, const std::string &prefix, int limit)
+{
+    if (db == nullptr || prefix.empty() || prefix.front() < 'a' || prefix.front() > 'z' || limit <= 0)
+    {
+        return {};
+    }
+
+    const std::string table = "tbl_1_" + std::string(1, prefix.front());
+    const std::string sql = "SELECT \"key\", \"value\", \"weight\" FROM \"" + table +
+                            "\" WHERE \"key\" >= ?1 AND \"key\" < ?2 ORDER BY \"weight\" DESC LIMIT ?3";
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        return {};
+    }
+
+    const std::string upper_bound = prefix + "{";
+    sqlite3_bind_text(stmt, 1, prefix.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, upper_bound.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, limit);
+
+    std::vector<KeyedQueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const auto *key = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+        rows.push_back(KeyedQueryItem{key == nullptr ? "" : key,
+                                      value == nullptr ? "" : value,
+                                      sqlite3_column_int(stmt, 2)});
+    }
+    sqlite3_finalize(stmt);
+    return rows;
 }
 
 QueryResult query_words(const std::string &pinyin, const std::string &db_path, const std::string &mode, int limit)
