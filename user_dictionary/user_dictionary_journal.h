@@ -20,8 +20,13 @@ std::string default_user_db_path();
 
 bool record_upsert(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
                    const std::string &value, std::int64_t weight, const std::string &display = {});
+bool record_user_insert(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
+                        const std::string &value, std::int64_t weight, const std::string &display = {});
 bool record_delete(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
                    const std::string &value);
+bool is_user_inserted(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
+                      const std::string &value);
+bool ensure_user_database(const std::string &user_db_path);
 bool record_pinyin_upsert_from_database(const std::string &main_db_path, const std::string &key,
                                         const std::string &value);
 

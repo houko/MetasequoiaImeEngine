@@ -653,8 +653,9 @@ int ShuangpinDictionary::create_word(string pinyin, string word)
     {
         return ERROR_CODE;
     }
-    (void)user_dictionary::record_upsert(user_dictionary::default_user_db_path(),
-                                         user_dictionary::DictionaryKind::Pinyin, pinyin, word, 10000);
+    (void)user_dictionary::record_user_insert(user_dictionary::default_user_db_path(),
+                                              user_dictionary::DictionaryKind::Pinyin,
+                                              pinyin, word, 10000);
     /* 插入新词之后要清理缓存 */
     reset_cache();
     return OK;
