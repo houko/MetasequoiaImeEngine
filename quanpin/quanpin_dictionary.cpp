@@ -125,7 +125,8 @@ std::optional<WordItem> QuanpinDictionary::find_candidate(
         sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_step(stmt) != SQLITE_ROW)
         return std::nullopt;
-    return WordItem(key, value, sqlite3_column_int64(stmt, 0));
+    return WordItem(key, value, sqlite3_column_int64(stmt, 0),
+                    CandidateSource::Database, key);
 }
 
 bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
@@ -139,6 +140,11 @@ bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::
     if (expanded.size() <= candidates.size())
     {
         return false;
+    }
+    for (auto &item : expanded)
+    {
+        item.canonical_pinyin = item.pinyin;
+        item.pinyin = code;
     }
 
     candidates = expanded;
@@ -267,17 +273,25 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
         if (segments.size() == 1 && segments.front().size() == 1)
         {
             constexpr int kInitialCandidateLimit = 24;
-            return query_initial(segments.front(), kInitialCandidateLimit);
+            auto result = query_initial(segments.front(), kInitialCandidateLimit);
+            const std::string matched_code =
+                segmentation.empty() ? segments.front() : segmentation;
+            for (auto &item : result)
+            {
+                item.canonical_pinyin = item.pinyin;
+                item.pinyin = matched_code;
+            }
+            return result;
         }
 
         const auto flat_items =
-            quanpin::query_segments_flat(segments, db_, statement_cache_, INT_MAX);
+            quanpin::query_segments_keyed_flat(segments, db_, statement_cache_, INT_MAX);
         std::vector<WordItem> result;
         result.reserve(flat_items.size());
         const std::string code = segmentation.empty() ? quanpin::join_segments(segments) : segmentation;
-        for (const auto &[word, weight] : flat_items)
+        for (const auto &item : flat_items)
         {
-            result.emplace_back(code, word, weight);
+            result.emplace_back(code, item.value, item.weight, CandidateSource::Database, item.key);
         }
         return result;
     }
@@ -300,7 +314,7 @@ std::vector<WordItem> QuanpinDictionary::query_initial(const std::string &code, 
     result.reserve(rows.size());
     for (const auto &item : rows)
     {
-        result.emplace_back(item.key, item.value, item.weight);
+        result.emplace_back(item.key, item.value, item.weight, CandidateSource::Database, item.key);
     }
     return result;
 }
@@ -325,7 +339,8 @@ std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &
         std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return item.word == sentence; });
     if (exists == result.end())
     {
-        result.emplace_back(segmentation.empty() ? raw_input : segmentation, sentence, 1);
+        result.emplace_back(segmentation.empty() ? raw_input : segmentation, sentence, 1,
+                            CandidateSource::Fallback);
     }
     return result;
 }
@@ -382,6 +397,39 @@ int QuanpinDictionary::create_word(std::string pinyin, std::string word)
         return OK;
     }
 
+    if (insert_data(build_sql_for_inserting_word(pinyin, jp, word)) != OK)
+    {
+        return ERROR_CODE;
+    }
+    (void)user_dictionary::record_user_insert(user_dictionary::default_user_db_path(),
+                                              user_dictionary::DictionaryKind::Pinyin,
+                                              pinyin, word, 10000);
+    reset_cache();
+    return OK;
+}
+
+int QuanpinDictionary::create_word_from_canonical_pinyin(std::string pinyin, std::string word)
+{
+    const auto segments = quanpin::split_segments(pinyin);
+    const size_t han_count = HelpcodeUtils::count_han_chars(word);
+    if (segments.empty() || segments.size() != han_count ||
+        std::any_of(segments.begin(), segments.end(), [](const std::string &segment) {
+            return segment.empty() || !quanpin::is_complete_pinyin_input(segment);
+        }))
+    {
+        return ERROR_CODE;
+    }
+
+    pinyin = quanpin::join_segments(segments);
+    const std::string jp = quanpin::segments_to_jianpin(segments);
+    if (!do_validate(pinyin, jp, word))
+    {
+        return ERROR_CODE;
+    }
+    if (check_data(build_sql_for_checking_word(pinyin, jp, word)))
+    {
+        return OK;
+    }
     if (insert_data(build_sql_for_inserting_word(pinyin, jp, word)) != OK)
     {
         return ERROR_CODE;
@@ -554,7 +602,8 @@ std::vector<WordItem> QuanpinDictionary::select_complete_data(const std::string 
     {
         candidate_list.emplace_back(std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))),
                                     std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))),
-                                    sqlite3_column_int64(stmt, 3));
+                                    sqlite3_column_int64(stmt, 3), CandidateSource::Database,
+                                    std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))));
     }
     sqlite3_finalize(stmt);
     return candidate_list;

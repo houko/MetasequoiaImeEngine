@@ -25,6 +25,7 @@ class QuanpinDictionary
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
 
     int create_word(std::string pinyin, std::string word);
+    int create_word_from_canonical_pinyin(std::string pinyin, std::string word);
     int update_weight_by_word(std::string word);
     int update_weight_by_pinyin_and_word(std::string pinyin, std::string word);
     int delete_by_pinyin_and_word(std::string pinyin, std::string word);

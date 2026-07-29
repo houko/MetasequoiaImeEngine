@@ -2,6 +2,7 @@
 #include "../user_dictionary/user_dictionary_journal.h"
 #include "../common/helpcode_utils.h"
 #include "../quanpin/quanpin_query.h"
+#include "../quanpin/quanpin_utils.h"
 #include "shuangpin_query.h"
 #include "shuangpin_utils.h"
 #include <algorithm>
@@ -628,21 +629,25 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_for_creating
 
 int ShuangpinDictionary::create_word(string pinyin, string word)
 {
-    (void)0;
-    const std::string quanpin = shuangpin::normalize_input(pinyin, profile_);
-    (void)0;
-    const auto cuts = quanpin::cut_pinyin_by_mode(quanpin, "correction");
-    if (cuts.empty())
+    return create_word_from_quanpin(shuangpin::normalize_input(pinyin, profile_), std::move(word));
+}
+
+int ShuangpinDictionary::create_word_from_quanpin(string pinyin, string word)
+{
+    const auto segments = quanpin::split_segments(pinyin);
+    const size_t han_count = HelpcodeUtils::count_han_chars(word);
+    if (segments.empty() || segments.size() != han_count ||
+        std::any_of(segments.begin(), segments.end(), [](const std::string &segment) {
+            return segment.empty() || !quanpin::is_complete_pinyin_input(segment);
+        }))
     {
         return ERROR_CODE;
     }
 
-    pinyin = quanpin::join_segments(cuts.front());
-    const string jp = quanpin::segments_to_jianpin(cuts.front());
-    (void)0;
+    pinyin = quanpin::join_segments(segments);
+    const string jp = quanpin::segments_to_jianpin(segments);
     if (!do_validate(pinyin, jp, word))
     {
-        (void)0;
         return ERROR_CODE;
     }
     if (check_data(quanpin_db_, build_quanpin_sql_for_checking_word(pinyin, jp, word)))
@@ -779,15 +784,16 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     try
     {
         const auto flat_items =
-            quanpin::query_segments_flat(segments,
-                                         quanpin_db_,
-                                         quanpin_statement_cache_,
-                                         INT_MAX,
-                                         quanpin::QuerySource::Shuangpin);
+            quanpin::query_segments_keyed_flat(segments,
+                                               quanpin_db_,
+                                               quanpin_statement_cache_,
+                                               INT_MAX,
+                                               quanpin::QuerySource::Shuangpin);
         candidate_list.reserve(flat_items.size());
-        for (const auto &[word, weight] : flat_items)
+        for (const auto &item : flat_items)
         {
-            candidate_list.emplace_back(pinyin_sequence, word, weight);
+            candidate_list.emplace_back(pinyin_sequence, item.value, item.weight,
+                                        CandidateSource::Database, item.key);
         }
     }
     catch (const std::exception &ex)
@@ -812,7 +818,8 @@ std::optional<WordItem> ShuangpinDictionary::find_candidate(
         sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_step(stmt) != SQLITE_ROW)
         return std::nullopt;
-    return WordItem(key, value, sqlite3_column_int64(stmt, 0));
+    return WordItem(key, value, sqlite3_column_int64(stmt, 0),
+                    CandidateSource::Database, key);
 }
 
 vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_initial_from_quanpin_database(
@@ -831,7 +838,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_initial_from_qu
     candidate_list.reserve(rows.size());
     for (const auto &item : rows)
     {
-        candidate_list.emplace_back(item.key, item.value, item.weight);
+        candidate_list.emplace_back(code, item.value, item.weight, CandidateSource::Database, item.key);
     }
     return candidate_list;
 }
@@ -855,7 +862,8 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::select_complete_data(
         candidateList.emplace_back(                                               //
             string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))), // key
             string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))), // value
-            sqlite3_column_int64(stmt, 3));                                         // weight
+            sqlite3_column_int64(stmt, 3), CandidateSource::Database,
+            string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)))); // canonical key
     }
     sqlite3_finalize(stmt);
     return candidateList;

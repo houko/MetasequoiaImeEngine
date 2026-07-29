@@ -45,6 +45,7 @@ class ShuangpinDictionary
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
     std::vector<WordItem> generate_for_creating_word(const std::string code);
     int create_word(std::string pinyin, std::string word);
+    int create_word_from_quanpin(std::string pinyin, std::string word);
     // 一次到顶
     int update_weight_by_word(std::string word);
     // 一次到顶

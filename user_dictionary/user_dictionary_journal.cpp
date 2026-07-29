@@ -567,9 +567,10 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         for (size_t i = rebalance_begin; i < rebalance_end; ++i)
         {
             const auto &item = database_candidates[i];
-            std::string item_key = item.pinyin;
+            std::string item_key =
+                item.canonical_pinyin.empty() ? item.pinyin : item.canonical_pinyin;
             const auto context_segments = pinyin_segments(context_key);
-            if (context_segments.size() > 1)
+            if (item.canonical_pinyin.empty() && context_segments.size() > 1)
             {
                 auto item_segments = context_segments;
                 const size_t char_count = static_cast<size_t>(
