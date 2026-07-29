@@ -98,7 +98,7 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
     pinyin_segmentation_ = segmentation.empty() ? (segments.empty() ? raw_input : quanpin::join_segments(segments))
                                                 : segmentation;
 
-    const std::string cache_key = remove_delimiters(pinyin_segmentation_);
+    const std::string cache_key = pinyin_segmentation_;
     if (auto cached = series_cache_.get(cache_key))
     {
         current_candidate_list_ = cached.value();
@@ -179,7 +179,7 @@ std::vector<WordItem> QuanpinDictionary::query_single_path(const std::string &ra
                                                            const std::string &segmentation,
                                                            const quanpin::Segments &segments)
 {
-    const std::string cache_key = remove_delimiters(segmentation.empty() ? raw_input : segmentation);
+    const std::string cache_key = segmentation.empty() ? raw_input : segmentation;
     if (auto cached = cache_.get(cache_key))
     {
         return cached.value();
@@ -440,7 +440,10 @@ int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, co
         return ERROR_CODE;
     }
 
-    auto list = series_cache_.get(pinyin).value_or(std::vector<WordItem>{});
+    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    const std::string cache_key =
+        cuts.empty() ? pinyin : quanpin::join_segments(cuts.front());
+    auto list = series_cache_.get(cache_key).value_or(std::vector<WordItem>{});
 
     // Keep at most one cloud/AI suggestion in the series cache for this key.
     if (source == CandidateSource::AiSuggestion || source == CandidateSource::CloudSuggestion)
@@ -465,7 +468,7 @@ int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, co
         }
     }
 
-    series_cache_.insert(pinyin, list);
+    series_cache_.insert(cache_key, list);
     return OK;
 }
 

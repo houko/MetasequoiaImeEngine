@@ -124,6 +124,11 @@ QueryRequest QuanpinScheme::build_request() const
     }
 
     request.raw_segmentation = shuangpin::apply_segmentation_cases(request.normalized_segmentation, cased_source);
+    if (!cased_source.empty() && cased_source.back() == '\'' &&
+        (request.raw_segmentation.empty() || request.raw_segmentation.back() != '\''))
+    {
+        request.raw_segmentation.push_back('\'');
+    }
     if (helpcode_length > 0)
     {
         request.raw_segmentation += "'";
