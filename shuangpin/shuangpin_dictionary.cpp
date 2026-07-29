@@ -629,7 +629,8 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_for_creating
 
 int ShuangpinDictionary::create_word(string pinyin, string word)
 {
-    return create_word_from_quanpin(shuangpin::normalize_input(pinyin, profile_), std::move(word));
+    return create_word_from_quanpin(
+        shuangpin::normalize_input_with_delimiters(pinyin, profile_), std::move(word));
 }
 
 int ShuangpinDictionary::create_word_from_quanpin(string pinyin, string word)
