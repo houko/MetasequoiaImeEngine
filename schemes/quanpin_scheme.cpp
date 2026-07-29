@@ -48,8 +48,11 @@ void QuanpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
 
     if (vk == VK_OEM_7)
     {
-        key_strokes_.push_back(KeyStroke{vk, modifiers_down, wch});
-        raw_input_.push_back('\'');
+        if (raw_input_.empty() || raw_input_.back() != '\'')
+        {
+            key_strokes_.push_back(KeyStroke{vk, modifiers_down, wch});
+            raw_input_.push_back('\'');
+        }
         return;
     }
 
