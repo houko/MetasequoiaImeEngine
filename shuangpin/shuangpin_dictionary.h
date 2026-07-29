@@ -40,7 +40,8 @@ class ShuangpinDictionary
         const std::string &help_codes                //
     );
     bool expand_initial_candidates();
-    bool expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates);
+    bool expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates,
+                                   const std::string &series_cache_key = {});
     std::optional<WordItem> find_candidate(const std::string &key, const std::string &value);
     int handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch = 0);
     std::vector<WordItem> generate_for_creating_word(const std::string code);

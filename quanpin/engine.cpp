@@ -49,11 +49,19 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
 
 bool QuanpinEngine::expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates)
 {
-    if (request.scheme != SchemeType::Quanpin || request.raw_input.size() != 1 || candidates.size() != 24)
+    if (request.scheme != SchemeType::Quanpin ||
+        (request.enable_quanpin_helpcode &&
+         quanpin::detect_active_helpcode_length(request.raw_input, request.raw_input_with_cases) > 0))
     {
         return false;
     }
-    return dictionary_.expand_initial_candidates(request.raw_input, candidates);
+
+    const auto segments = quanpin::split_segments(request.segmentation);
+    if (segments.empty() || segments.front().size() != 1)
+    {
+        return false;
+    }
+    return dictionary_.expand_initial_candidates(segments.front(), candidates);
 }
 
 int QuanpinEngine::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)

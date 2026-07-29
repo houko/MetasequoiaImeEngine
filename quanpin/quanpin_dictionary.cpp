@@ -131,13 +131,24 @@ std::optional<WordItem> QuanpinDictionary::find_candidate(
 
 bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
 {
-    if (code.size() != 1 || candidates.size() != 24)
+    if (code.size() != 1)
+    {
+        return false;
+    }
+
+    const auto is_limited_initial = [&](const WordItem &item) {
+        return item.source == CandidateSource::Database && item.pinyin == code;
+    };
+    const size_t limited_count =
+        static_cast<size_t>(std::count_if(candidates.begin(), candidates.end(), is_limited_initial));
+    constexpr size_t kInitialCandidateLimit = 24;
+    if (limited_count != kInitialCandidateLimit)
     {
         return false;
     }
 
     auto expanded = query_initial(code, INT_MAX);
-    if (expanded.size() <= candidates.size())
+    if (expanded.size() <= limited_count)
     {
         return false;
     }
@@ -147,10 +158,27 @@ bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::
         item.pinyin = code;
     }
 
-    candidates = expanded;
+    std::vector<WordItem> merged;
+    merged.reserve(candidates.size() - limited_count + expanded.size());
+    bool inserted = false;
+    for (auto &item : candidates)
+    {
+        if (is_limited_initial(item))
+        {
+            if (!inserted)
+            {
+                merged.insert(merged.end(), expanded.begin(), expanded.end());
+                inserted = true;
+            }
+            continue;
+        }
+        merged.push_back(std::move(item));
+    }
+
+    candidates = std::move(merged);
     cache_.insert(code, expanded);
-    series_cache_.insert(code, expanded);
-    current_candidate_list_ = std::move(expanded);
+    series_cache_.insert(pinyin_segmentation_, candidates);
+    current_candidate_list_ = candidates;
     return true;
 }
 

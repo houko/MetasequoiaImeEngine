@@ -184,13 +184,20 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
 
 bool ShuangpinEngine::expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates)
 {
-    const std::string pure_input = shuangpin::remove_manual_delimiters(request.raw_input);
-    if (request.scheme != SchemeType::Shuangpin || pure_input.size() != 1 || candidates.size() != 24)
+    if (request.scheme != SchemeType::Shuangpin)
     {
         return false;
     }
 
-    return dictionary_.expand_initial_candidates(pure_input, candidates);
+    const std::string segmentation = shuangpin::segment_input(request.raw_input, profile_);
+    const size_t separator = segmentation.find('\'');
+    const std::string initial_code = segmentation.substr(0, separator);
+    if (initial_code.size() != 1)
+    {
+        return false;
+    }
+
+    return dictionary_.expand_initial_candidates(initial_code, candidates, request.raw_input);
 }
 
 int ShuangpinEngine::create_word(std::string pinyin, std::string word)

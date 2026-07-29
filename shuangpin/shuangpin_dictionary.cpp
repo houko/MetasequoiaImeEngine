@@ -459,20 +459,53 @@ bool ShuangpinDictionary::expand_initial_candidates()
     return expand_initial_candidates(_pinyin_sequence, _cur_candidate_list);
 }
 
-bool ShuangpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
+bool ShuangpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates,
+                                                    const std::string &series_cache_key)
 {
-    if (code.size() != 1 || candidates.size() != 24)
+    if (code.size() != 1)
+    {
+        return false;
+    }
+
+    const auto is_limited_initial = [&](const WordItem &item) {
+        return item.source == CandidateSource::Database && item.pinyin == code;
+    };
+    const size_t limited_count =
+        static_cast<size_t>(std::count_if(candidates.begin(), candidates.end(), is_limited_initial));
+    constexpr size_t kInitialCandidateLimit = 24;
+    if (limited_count != kInitialCandidateLimit)
     {
         return false;
     }
 
     auto expanded = query_initial_from_quanpin_database(code, INT_MAX);
-    if (expanded.size() <= candidates.size())
+    if (expanded.size() <= limited_count)
     {
         return false;
     }
 
-    candidates = std::move(expanded);
+    std::vector<WordItem> merged;
+    merged.reserve(candidates.size() - limited_count + expanded.size());
+    bool inserted = false;
+    for (auto &item : candidates)
+    {
+        if (is_limited_initial(item))
+        {
+            if (!inserted)
+            {
+                merged.insert(merged.end(), expanded.begin(), expanded.end());
+                inserted = true;
+            }
+            continue;
+        }
+        merged.push_back(std::move(item));
+    }
+
+    candidates = std::move(merged);
+    if (!series_cache_key.empty())
+    {
+        _cached_buffer_series.insert(series_cache_key, candidates);
+    }
     return true;
 }
 
