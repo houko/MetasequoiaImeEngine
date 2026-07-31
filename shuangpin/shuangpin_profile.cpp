@@ -124,7 +124,78 @@ const ShuangpinProfile &GetZiranmaShuangpinProfile()
     return profile;
 }
 
+const ShuangpinProfile &GetShoudaoShuangpinProfile()
+{
+    static const ShuangpinProfile profile{
+        "shoudao",
+        {
+            {"sh", "e"},
+            {"ch", "i"},
+            {"zh", "v"},
+        },
+        {
+            {"a", "aa"},
+            {"ai", "ai"},
+            {"an", "an"},
+            {"ao", "ao"},
+            {"ang", "ay"},
+            // sh sits on "e", so "ee"/"ei"/"ef" would collide with she/shi/sheng.
+            {"e", "ue"},
+            {"ei", "ui"},
+            {"en", "en"},
+            {"eng", "uf"},
+            {"er", "er"},
+            {"o", "oo"},
+            {"ou", "ou"},
+        },
+        {
+            {"iu", "q"},
+            {"ua", "w"},
+            {"e", "e"},
+            {"ie", "r"},
+            {"uan", "t"},
+            {"ang", "y"},
+            {"u", "u"},
+            {"i", "i"},
+            {"o", "o"},
+            {"uo", "o"},
+            {"iao", "p"},
+            {"a", "a"},
+            {"ou", "s"},
+            {"ao", "d"},
+            {"eng", "f"},
+            {"uai", "g"},
+            {"ing", "g"},
+            {"ong", "h"},
+            {"iong", "h"},
+            {"an", "j"},
+            {"en", "k"},
+            {"ia", "k"},
+            {"ai", "l"},
+            {"ue", "l"},
+            {"un", "z"},
+            {"iang", "x"},
+            {"uang", "x"},
+            {"in", "c"},
+            {"v", "v"},
+            {"ui", "v"},
+            {"ve", "b"},
+            {"ian", "n"},
+            {"ei", "m"},
+        },
+    };
+    return profile;
+}
+
 const ShuangpinProfile &GetShuangpinProfile(std::string_view name)
 {
-    return name == "ziranma" ? GetZiranmaShuangpinProfile() : GetXiaoheShuangpinProfile();
+    if (name == "ziranma")
+    {
+        return GetZiranmaShuangpinProfile();
+    }
+    if (name == "shoudao")
+    {
+        return GetShoudaoShuangpinProfile();
+    }
+    return GetXiaoheShuangpinProfile();
 }

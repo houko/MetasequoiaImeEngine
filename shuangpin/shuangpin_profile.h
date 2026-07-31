@@ -15,4 +15,5 @@ struct ShuangpinProfile
 // Profiles have static storage duration and can safely be shared by sessions.
 const ShuangpinProfile &GetXiaoheShuangpinProfile();
 const ShuangpinProfile &GetZiranmaShuangpinProfile();
+const ShuangpinProfile &GetShoudaoShuangpinProfile();
 const ShuangpinProfile &GetShuangpinProfile(std::string_view name);
