@@ -19,80 +19,43 @@ std::string compute_helpcodes(const std::string &words, bool uppercase_all = fal
 bool is_quanpin_single_help_mode(const std::string &pinyin_with_cases);
 bool is_quanpin_double_help_mode(const std::string &pinyin_with_cases);
 
+enum class SingleHelpcodeMatch
+{
+    None,
+    First,
+    Last,
+};
+
+SingleHelpcodeMatch match_single_helpcode(const std::string &word, const std::string &help_code);
+bool matches_double_helpcodes(const std::string &word, const std::string &help_codes);
+
 template <typename TWordItem>
 std::vector<TWordItem> reorder_candidates_with_single_helpcode(const std::vector<TWordItem> &candidate_list,
                                                                const std::string &help_code)
 {
-    std::vector<TWordItem> first_helpcode_matched_list;
-    std::vector<TWordItem> last_helpcode_matched_list;
-    std::vector<TWordItem> left_helpcode_matched_list;
-    std::vector<TWordItem> result_list;
-    const auto &keymap = helpcode_keymap();
-
     if (help_code.size() != 1)
     {
         return candidate_list;
     }
 
+    std::vector<TWordItem> first_helpcode_matched_list;
+    std::vector<TWordItem> last_helpcode_matched_list;
+    std::vector<TWordItem> left_helpcode_matched_list;
+    std::vector<TWordItem> result_list;
+
     for (const auto &cand : candidate_list)
     {
-        const std::string &word = cand.word;
-        bool is_first_helpcode_matched = false;
-        bool is_last_helpcode_matched = false;
-
-        if (count_han_chars(word) == 1)
+        switch (match_single_helpcode(cand.word, help_code))
         {
-            if (keymap.count(word))
-            {
-                if (keymap.at(word)[0] == help_code[0])
-                {
-                    first_helpcode_matched_list.push_back(cand);
-                    is_first_helpcode_matched = true;
-                }
-            }
-
-            if (!is_first_helpcode_matched)
-            {
-                if (keymap.count(word))
-                {
-                    if (keymap.at(word)[1] == help_code[0])
-                    {
-                        last_helpcode_matched_list.push_back(cand);
-                        is_last_helpcode_matched = true;
-                    }
-                }
-            }
-        }
-        else
-        {
-            const std::string first_han_char = get_first_han_char(word);
-            const std::string last_han_char = get_last_han_char(word);
-
-            if (keymap.count(first_han_char))
-            {
-                if (keymap.at(first_han_char)[0] == help_code[0])
-                {
-                    first_helpcode_matched_list.push_back(cand);
-                    is_first_helpcode_matched = true;
-                }
-            }
-
-            if (!is_first_helpcode_matched)
-            {
-                if (keymap.count(last_han_char))
-                {
-                    if (keymap.at(last_han_char)[0] == help_code[0])
-                    {
-                        last_helpcode_matched_list.push_back(cand);
-                        is_last_helpcode_matched = true;
-                    }
-                }
-            }
-        }
-
-        if (!is_first_helpcode_matched && !is_last_helpcode_matched)
-        {
+        case SingleHelpcodeMatch::First:
+            first_helpcode_matched_list.push_back(cand);
+            break;
+        case SingleHelpcodeMatch::Last:
+            last_helpcode_matched_list.push_back(cand);
+            break;
+        case SingleHelpcodeMatch::None:
             left_helpcode_matched_list.push_back(cand);
+            break;
         }
     }
 
@@ -107,7 +70,6 @@ std::vector<TWordItem> filter_candidates_with_double_helpcodes(const std::vector
                                                                const std::string &help_codes)
 {
     std::vector<TWordItem> filtered_list;
-    const auto &keymap = helpcode_keymap();
     if (help_codes.size() != 2)
     {
         return filtered_list;
@@ -115,20 +77,7 @@ std::vector<TWordItem> filter_candidates_with_double_helpcodes(const std::vector
 
     for (const auto &cand : candidate_list)
     {
-        const std::string &word = cand.word;
-        if (count_han_chars(word) == 1)
-        {
-            if (keymap.count(word) && keymap.at(word)[0] == help_codes[0] && keymap.at(word)[1] == help_codes[1])
-            {
-                filtered_list.push_back(cand);
-            }
-            continue;
-        }
-
-        const std::string first_han_char = get_first_han_char(word);
-        const std::string last_han_char = get_last_han_char(word);
-        if (keymap.count(first_han_char) && keymap.count(last_han_char) && keymap.at(first_han_char)[0] == help_codes[0] &&
-            keymap.at(last_han_char)[0] == help_codes[1])
+        if (matches_double_helpcodes(cand.word, help_codes))
         {
             filtered_list.push_back(cand);
         }

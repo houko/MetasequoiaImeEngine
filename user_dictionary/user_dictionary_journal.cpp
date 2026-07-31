@@ -396,7 +396,8 @@ bool is_fixed(const std::string &user_db_path, const std::string &context_key,
 void apply_fixed_positions(
     const std::string &user_db_path, const std::string &context_key,
     std::vector<WordItem> &candidates, bool include_missing,
-    const std::function<std::optional<WordItem>(const std::string &, const std::string &)> &find_candidate)
+    const std::function<std::optional<WordItem>(const std::string &, const std::string &)> &find_candidate,
+    bool keep_dynamic_candidate_positions)
 {
     if (context_key.empty() || candidates.empty()) return;
     UserDatabase user_db(user_db_path);
@@ -405,12 +406,15 @@ void apply_fixed_positions(
         "SELECT entry_key,value,position FROM fixed_candidate_positions WHERE context_key=?1 ORDER BY position");
     if (!fixed || !bind_text(fixed.get(), 1, context_key)) return;
     std::vector<WordItem> dynamic_candidates;
-    candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](const WordItem &item) {
-        if (item.source != CandidateSource::CloudSuggestion && item.source != CandidateSource::AiSuggestion)
-            return false;
-        dynamic_candidates.push_back(item);
-        return true;
-    }), candidates.end());
+    if (!keep_dynamic_candidate_positions)
+    {
+        candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](const WordItem &item) {
+            if (item.source != CandidateSource::CloudSuggestion && item.source != CandidateSource::AiSuggestion)
+                return false;
+            dynamic_candidates.push_back(item);
+            return true;
+        }), candidates.end());
+    }
 
     struct Fixed { WordItem item; int position; };
     std::vector<Fixed> rows;

@@ -225,65 +225,17 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
 
     for (const auto &cand : candidate_list)
     {
-        string cur_word = cand.word;
-        int count = ShuangpinUtil::count_utf8_chars(cur_word);
-        bool is_first_helpcode_matched = false;
-        bool is_last_helpcode_matched = false;
-        /* 处理当前这个候选项 */
-        if (count == 1)
-        { /* 单字 */
-            /* 第一个辅助码匹配上了 */
-            if (HelpcodeUtils::helpcode_keymap().count(cur_word))
-            {
-                if (HelpcodeUtils::helpcode_keymap().at(cur_word)[0] == help_code[0])
-                {
-                    first_helpcode_matched_list.push_back(cand);
-                    is_first_helpcode_matched = true;
-                }
-            }
-            /* 看看第二个辅助码是否匹配 */
-            if (!is_first_helpcode_matched)
-            {
-                if (HelpcodeUtils::helpcode_keymap().count(cur_word))
-                {
-                    if (HelpcodeUtils::helpcode_keymap().at(cur_word)[1] == help_code[0])
-                    {
-                        last_helpcode_matched_list.push_back(cand);
-                        is_last_helpcode_matched = true;
-                    }
-                }
-            }
-        }
-        else
-        { /* 多字 */
-            /* 第一个字的第一个辅助码匹配上了 */
-            string firstHanChar = HelpcodeUtils::get_first_han_char(cur_word);
-            if (HelpcodeUtils::helpcode_keymap().count(firstHanChar))
-            {
-                if (HelpcodeUtils::helpcode_keymap().at(firstHanChar)[0] == help_code[0])
-                {
-                    first_helpcode_matched_list.push_back(cand);
-                    is_first_helpcode_matched = true;
-                }
-            }
-            /* 最后一个字的第一个辅助码匹配上了 */
-            if (!is_first_helpcode_matched)
-            {
-                string lastHanChar = HelpcodeUtils::get_last_han_char(cur_word);
-                if (HelpcodeUtils::helpcode_keymap().count(lastHanChar))
-                {
-                    if (HelpcodeUtils::helpcode_keymap().at(lastHanChar)[0] == help_code[0])
-                    {
-                        last_helpcode_matched_list.push_back(cand);
-                        is_last_helpcode_matched = true;
-                    }
-                }
-            }
-        }
-        /* 辅助码都匹配不上 */
-        if (!is_first_helpcode_matched && !is_last_helpcode_matched)
+        switch (HelpcodeUtils::match_single_helpcode(cand.word, help_code))
         {
+        case HelpcodeUtils::SingleHelpcodeMatch::First:
+            first_helpcode_matched_list.push_back(cand);
+            break;
+        case HelpcodeUtils::SingleHelpcodeMatch::Last:
+            last_helpcode_matched_list.push_back(cand);
+            break;
+        case HelpcodeUtils::SingleHelpcodeMatch::None:
             left_helpcode_matched_list.push_back(cand);
+            break;
         }
     }
 
@@ -323,32 +275,9 @@ void ShuangpinDictionary::filter_with_double_helpcodes(               //
 
     for (const auto &cand : candidate_list)
     {
-        string cur_word = cand.word;
-        int count = ShuangpinUtil::count_utf8_chars(cur_word);
-        if (count == 1)
-        { /* 单字 */
-            if (HelpcodeUtils::helpcode_keymap().count(cur_word))
-            {
-                if (HelpcodeUtils::helpcode_keymap().at(cur_word)[0] == help_codes[0] &&
-                    HelpcodeUtils::helpcode_keymap().at(cur_word)[1] == help_codes[1])
-                {
-                    result_list.push_back(cand);
-                }
-            }
-        }
-        else
-        { /* 多字 */
-            string firstHanChar = HelpcodeUtils::get_first_han_char(cur_word);
-            string lastHanChar = HelpcodeUtils::get_last_han_char(cur_word);
-            if (HelpcodeUtils::helpcode_keymap().count(firstHanChar) &&
-                HelpcodeUtils::helpcode_keymap().count(lastHanChar))
-            {
-                if (HelpcodeUtils::helpcode_keymap().at(firstHanChar)[0] == help_codes[0] &&
-                    HelpcodeUtils::helpcode_keymap().at(lastHanChar)[0] == help_codes[1])
-                {
-                    result_list.push_back(cand);
-                }
-            }
+        if (HelpcodeUtils::matches_double_helpcodes(cand.word, help_codes))
+        {
+            result_list.push_back(cand);
         }
     }
 }

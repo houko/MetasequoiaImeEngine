@@ -51,8 +51,12 @@ bool clear_fixed_position(const std::string &user_db_path, const std::string &co
                           const std::string &entry_key, const std::string &value);
 bool is_fixed(const std::string &user_db_path, const std::string &context_key,
               const std::string &entry_key, const std::string &value);
+// Cloud/AI suggestions are normally hoisted back to their fixed slots (cloud at
+// index 1, AI at index 2). Set keep_dynamic_candidate_positions when the caller
+// already decided where they belong, e.g. after helpcode filtering.
 void apply_fixed_positions(
     const std::string &user_db_path, const std::string &context_key,
     std::vector<WordItem> &candidates, bool include_missing,
-    const std::function<std::optional<WordItem>(const std::string &, const std::string &)> &find_candidate = {});
+    const std::function<std::optional<WordItem>(const std::string &, const std::string &)> &find_candidate = {},
+    bool keep_dynamic_candidate_positions = false);
 } // namespace user_dictionary

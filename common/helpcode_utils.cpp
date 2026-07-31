@@ -233,4 +233,68 @@ bool is_quanpin_double_help_mode(const std::string &pinyin_with_cases)
     return help_code_1 >= 'A' && help_code_1 <= 'Z' && help_code_2 >= 'A' && help_code_2 <= 'Z';
 }
 
+SingleHelpcodeMatch match_single_helpcode(const std::string &word, const std::string &help_code)
+{
+    if (word.empty() || help_code.size() != 1)
+    {
+        return SingleHelpcodeMatch::None;
+    }
+
+    const auto &keymap = helpcode_keymap();
+
+    if (count_han_chars(word) == 1)
+    {
+        const auto found = keymap.find(word);
+        if (found == keymap.end())
+        {
+            return SingleHelpcodeMatch::None;
+        }
+        if (found->second[0] == help_code[0])
+        {
+            return SingleHelpcodeMatch::First;
+        }
+        if (found->second.size() > 1 && found->second[1] == help_code[0])
+        {
+            return SingleHelpcodeMatch::Last;
+        }
+        return SingleHelpcodeMatch::None;
+    }
+
+    const auto first = keymap.find(get_first_han_char(word));
+    if (first != keymap.end() && first->second[0] == help_code[0])
+    {
+        return SingleHelpcodeMatch::First;
+    }
+
+    const auto last = keymap.find(get_last_han_char(word));
+    if (last != keymap.end() && last->second[0] == help_code[0])
+    {
+        return SingleHelpcodeMatch::Last;
+    }
+
+    return SingleHelpcodeMatch::None;
+}
+
+bool matches_double_helpcodes(const std::string &word, const std::string &help_codes)
+{
+    if (word.empty() || help_codes.size() != 2)
+    {
+        return false;
+    }
+
+    const auto &keymap = helpcode_keymap();
+
+    if (count_han_chars(word) == 1)
+    {
+        const auto found = keymap.find(word);
+        return found != keymap.end() && found->second.size() > 1 && found->second[0] == help_codes[0] &&
+               found->second[1] == help_codes[1];
+    }
+
+    const auto first = keymap.find(get_first_han_char(word));
+    const auto last = keymap.find(get_last_han_char(word));
+    return first != keymap.end() && last != keymap.end() && first->second[0] == help_codes[0] &&
+           last->second[0] == help_codes[1];
+}
+
 } // namespace HelpcodeUtils
