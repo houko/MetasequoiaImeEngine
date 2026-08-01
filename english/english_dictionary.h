@@ -17,6 +17,7 @@ class EnglishDictionary
 
     std::vector<WordItem> query_prefix(const std::string &prefix, size_t limit = 5);
     bool ready();
+    static bool ensure_schema(const std::string &db_path);
 
   private:
     bool ensure_query_statement();

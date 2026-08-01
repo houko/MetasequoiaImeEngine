@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <limits>
 #include <mutex>
+#include <numeric>
+#include "../english/english_dictionary.h"
 
 namespace user_dictionary
 {
@@ -213,20 +215,25 @@ bool apply_simple(sqlite3 *db, const std::string &table, const std::string &key_
            sqlite3_bind_int64(insert.get(), 3, weight) == SQLITE_OK && sqlite3_step(insert.get()) == SQLITE_DONE;
 }
 
-bool apply_english(sqlite3 *db, const std::string &key, const std::string &operation, const std::string &display)
+bool apply_english(sqlite3 *db, const std::string &key, const std::string &value,
+                   const std::string &operation, std::int64_t weight, const std::string &display)
 {
+    const std::string effective_display = display.empty() ? value : display;
     if (operation == "delete")
     {
-        auto stmt = prepare(db, "DELETE FROM english_words WHERE word=?1");
-        return stmt && bind_text(stmt.get(), 1, key) && sqlite3_step(stmt.get()) == SQLITE_DONE;
+        auto stmt = prepare(db, "DELETE FROM english_words WHERE word=?1 AND display=?2");
+        return stmt && bind_text(stmt.get(), 1, key) && bind_text(stmt.get(), 2, effective_display) &&
+               sqlite3_step(stmt.get()) == SQLITE_DONE;
     }
-    auto update = prepare(db, "UPDATE english_words SET display=?1 WHERE word=?2");
-    if (!update || !bind_text(update.get(), 1, display) || !bind_text(update.get(), 2, key) ||
+    auto update = prepare(db, "UPDATE english_words SET weight=?1 WHERE word=?2 AND display=?3");
+    if (!update || sqlite3_bind_int64(update.get(), 1, weight) != SQLITE_OK || !bind_text(update.get(), 2, key) ||
+        !bind_text(update.get(), 3, effective_display) ||
         sqlite3_step(update.get()) != SQLITE_DONE)
         return false;
     if (sqlite3_changes(db) > 0) return true;
-    auto insert = prepare(db, "INSERT INTO english_words(word,display) VALUES(?1,?2)");
-    return insert && bind_text(insert.get(), 1, key) && bind_text(insert.get(), 2, display) &&
+    auto insert = prepare(db, "INSERT INTO english_words(word,display,weight) VALUES(?1,?2,?3)");
+    return insert && bind_text(insert.get(), 1, key) && bind_text(insert.get(), 2, effective_display) &&
+           sqlite3_bind_int64(insert.get(), 3, weight) == SQLITE_OK &&
            sqlite3_step(insert.get()) == SQLITE_DONE;
 }
 } // namespace
@@ -371,6 +378,82 @@ bool set_fixed_position(const std::string &user_db_path, const std::string &cont
         sqlite3_step(upsert.get()) == SQLITE_DONE;
     sqlite3_exec(db.get(), ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
     return ok;
+}
+
+bool adjust_english_candidate_ranking(const std::string &english_db_path, const std::string &user_db_path,
+                                      const std::string &context_key, const std::vector<WordItem> &ordered_candidates,
+                                      const std::string &entry_key, const std::string &value,
+                                      const std::string &mode, int linear_step, int trigger_count,
+                                      bool force_top, bool *ranking_changed)
+{
+    if (ranking_changed) *ranking_changed = false;
+    if (entry_key.empty() || value.empty() || ordered_candidates.empty() ||
+        is_fixed(user_db_path, context_key, entry_key, value))
+        return false;
+    if (!force_top && mode == "disabled") return true;
+
+    UserDatabase user_db(user_db_path);
+    if (!user_db) return false;
+    trigger_count = (std::max)(1, (std::min)(10, trigger_count));
+    if (!force_top)
+    {
+        auto counter = prepare(user_db.get(),
+            "INSERT INTO candidate_selection_state(context_key,entry_key,value,selection_count) VALUES(?1,?2,?3,1)"
+            " ON CONFLICT(context_key,entry_key,value) DO UPDATE SET selection_count=selection_count+1"
+            " RETURNING selection_count");
+        if (!counter || !bind_text(counter.get(),1,context_key) || !bind_text(counter.get(),2,entry_key) ||
+            !bind_text(counter.get(),3,value) || sqlite3_step(counter.get()) != SQLITE_ROW)
+            return false;
+        if (sqlite3_column_int(counter.get(),0) < trigger_count) return true;
+    }
+
+    const auto selected = std::find_if(ordered_candidates.begin(), ordered_candidates.end(), [&](const WordItem &item) {
+        return item.source == CandidateSource::EnglishDictionary && item.pinyin == entry_key && item.word == value;
+    });
+    if (selected == ordered_candidates.end()) return false;
+    const size_t rank = static_cast<size_t>(selected - ordered_candidates.begin());
+    if (rank == 0) return true;
+    size_t target = 0;
+    if (!force_top && mode == "halve") target = rank / 2;
+    else if (!force_top && mode == "linear")
+        target = rank > static_cast<size_t>((std::max)(1,linear_step))
+                     ? rank - static_cast<size_t>((std::max)(1,linear_step)) : 0;
+    else if (!force_top && mode == "promote") target = rank > 4 ? 4 : rank - 1;
+    const std::int64_t maximum_weight = std::accumulate(
+        ordered_candidates.begin(), ordered_candidates.end(), std::int64_t{0},
+        [](std::int64_t maximum, const WordItem &item) { return (std::max)(maximum, item.weight); });
+    const std::int64_t new_weight = target == 0
+        ? (std::max)(maximum_weight, selected->weight) + 1000
+        : ordered_candidates[target - 1].weight + 1;
+
+    auto english_db = open_database(english_db_path, SQLITE_OPEN_READWRITE);
+    auto journal = prepare_upsert_journal(user_db.get());
+    auto update = english_db ? prepare(english_db.get(),
+        "UPDATE english_words SET weight=?1 WHERE word=?2 AND display=?3") : Stmt{};
+    const bool ok = update && sqlite3_bind_int64(update.get(),1,new_weight) == SQLITE_OK &&
+        bind_text(update.get(),2,entry_key) && bind_text(update.get(),3,value) &&
+        sqlite3_step(update.get()) == SQLITE_DONE && sqlite3_changes(english_db.get()) > 0 && journal &&
+        write_upsert_journal(journal.get(), DictionaryKind::English, entry_key, value, new_weight, value);
+    if (ok)
+    {
+        if (ranking_changed) *ranking_changed = true;
+        auto reset = prepare(user_db.get(),
+            "DELETE FROM candidate_selection_state WHERE context_key=?1 AND entry_key=?2 AND value=?3");
+        if (reset) { bind_text(reset.get(),1,context_key); bind_text(reset.get(),2,entry_key);
+                     bind_text(reset.get(),3,value); sqlite3_step(reset.get()); }
+    }
+    return ok;
+}
+
+bool delete_english_candidate(const std::string &english_db_path, const std::string &user_db_path,
+                              const std::string &entry_key, const std::string &value)
+{
+    auto database = open_database(english_db_path, SQLITE_OPEN_READWRITE);
+    auto remove = database ? prepare(database.get(),
+        "DELETE FROM english_words WHERE word=?1 AND display=?2") : Stmt{};
+    const bool ok = remove && bind_text(remove.get(),1,entry_key) && bind_text(remove.get(),2,value) &&
+        sqlite3_step(remove.get()) == SQLITE_DONE && sqlite3_changes(database.get()) > 0;
+    return ok && record_delete(user_db_path, DictionaryKind::English, entry_key, value);
 }
 
 bool clear_fixed_position(const std::string &user_db_path, const std::string &context_key,
@@ -636,6 +719,11 @@ ReplayResult replay(const std::string &user_db_path, const std::string &main_db_
         result.error = "cannot open user dictionary database";
         return result;
     }
+    if (!EnglishDictionary::ensure_schema(english_db_path))
+    {
+        result.error = "cannot migrate English dictionary database";
+        return result;
+    }
     auto main_db = open_database(main_db_path, SQLITE_OPEN_READWRITE);
     auto english_db = open_database(english_db_path, SQLITE_OPEN_READWRITE);
     if (!main_db || !english_db)
@@ -666,7 +754,7 @@ ReplayResult replay(const std::string &user_db_path, const std::string &main_db_
         if (kind == "pinyin") ok = apply_pinyin(main_db.get(), key, value, operation, weight);
         else if (kind == "wubi") ok = apply_simple(main_db.get(), "wubi86", "key", "value", key, value, operation, weight);
         else if (kind == "quick") ok = apply_simple(main_db.get(), "quick_parases", "key", "value", key, value, operation, weight);
-        else if (kind == "english") ok = apply_english(english_db.get(), key, operation, display);
+        else if (kind == "english") ok = apply_english(english_db.get(), key, value, operation, weight, display);
         ok ? ++result.applied : ++result.failed;
     }
     sqlite3_exec(main_db.get(), result.failed == 0 ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
