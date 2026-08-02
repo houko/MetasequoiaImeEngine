@@ -30,14 +30,29 @@ std::string get_local_appdata_path()
 
 const std::string kAppName = "metasequoiaime";
 const std::string kPathSeparator = "\\";
+const std::string kHelpcodeDirectoryName = "helpcodes";
 const std::string kLantianHelpcodeFileName = "helpcode.txt";
 const std::string kZiranmaHelpcodeFileName = "zrm_helpcode_big_unique.txt";
-std::atomic_bool g_use_ziranma{false};
+const std::string kShouyou2_0HelpcodeFileName = "shouyou2_0_helpcode.txt";
+const std::string kShouyouplusHelpcodeFileName = "shouyouplus_helpcode.txt";
+const std::string kXiaoheHelpcodeFileName = "xiaohe_helpcode.txt";
+
+enum class HelpcodeSchemaIndex
+{
+    Lantian,
+    Ziranma,
+    Shouyou2_0,
+    Shouyouplus,
+    Xiaohe,
+};
+
+std::atomic<HelpcodeSchemaIndex> g_helpcode_schema{HelpcodeSchemaIndex::Lantian};
 
 std::unordered_map<std::string, std::string> initialize_helpcode_keymap(const std::string &file_name)
 {
     std::unordered_map<std::string, std::string> result;
-    std::ifstream helpcode_path(get_local_appdata_path() + kPathSeparator + kAppName + kPathSeparator + file_name);
+    std::ifstream helpcode_path(get_local_appdata_path() + kPathSeparator + kAppName + kPathSeparator +
+                                kHelpcodeDirectoryName + kPathSeparator + file_name);
     if (!helpcode_path.is_open())
     {
         (void)0;
@@ -65,14 +80,52 @@ const std::unordered_map<std::string, std::string> &helpcode_keymap()
 {
     static const auto lantian_keymap = initialize_helpcode_keymap(kLantianHelpcodeFileName);
     static const auto ziranma_keymap = initialize_helpcode_keymap(kZiranmaHelpcodeFileName);
-    return g_use_ziranma.load(std::memory_order_relaxed) ? ziranma_keymap : lantian_keymap;
+    static const auto shouyou2_0_keymap = initialize_helpcode_keymap(kShouyou2_0HelpcodeFileName);
+    static const auto shouyouplus_keymap = initialize_helpcode_keymap(kShouyouplusHelpcodeFileName);
+    static const auto xiaohe_keymap = initialize_helpcode_keymap(kXiaoheHelpcodeFileName);
+
+    switch (g_helpcode_schema.load(std::memory_order_relaxed))
+    {
+    case HelpcodeSchemaIndex::Ziranma:
+        return ziranma_keymap;
+    case HelpcodeSchemaIndex::Shouyou2_0:
+        return shouyou2_0_keymap;
+    case HelpcodeSchemaIndex::Shouyouplus:
+        return shouyouplus_keymap;
+    case HelpcodeSchemaIndex::Xiaohe:
+        return xiaohe_keymap;
+    case HelpcodeSchemaIndex::Lantian:
+    default:
+        return lantian_keymap;
+    }
+}
+
+bool is_supported_helpcode_schema(const std::string &schema)
+{
+    return schema == "lantian" || schema == "ziranma" || schema == "shouyou2_0" || schema == "shouyouplus" ||
+           schema == "xiaohe";
 }
 
 bool select_helpcode_schema(const std::string &schema)
 {
-    if (schema != "lantian" && schema != "ziranma")
+    if (!is_supported_helpcode_schema(schema))
         return false;
-    g_use_ziranma.store(schema == "ziranma", std::memory_order_relaxed);
+
+    HelpcodeSchemaIndex selected_schema;
+    if (schema == "lantian")
+        selected_schema = HelpcodeSchemaIndex::Lantian;
+    else if (schema == "ziranma")
+        selected_schema = HelpcodeSchemaIndex::Ziranma;
+    else if (schema == "shouyou2_0")
+        selected_schema = HelpcodeSchemaIndex::Shouyou2_0;
+    else if (schema == "shouyouplus")
+        selected_schema = HelpcodeSchemaIndex::Shouyouplus;
+    else if (schema == "xiaohe")
+        selected_schema = HelpcodeSchemaIndex::Xiaohe;
+    else
+        return false;
+
+    g_helpcode_schema.store(selected_schema, std::memory_order_relaxed);
     return true;
 }
 

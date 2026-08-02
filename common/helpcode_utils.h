@@ -8,6 +8,7 @@ namespace HelpcodeUtils
 {
 
 const std::unordered_map<std::string, std::string> &helpcode_keymap();
+bool is_supported_helpcode_schema(const std::string &schema);
 bool select_helpcode_schema(const std::string &schema);
 
 std::string get_first_han_char(const std::string &words);
