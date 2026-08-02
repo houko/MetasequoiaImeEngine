@@ -693,9 +693,16 @@ int ShuangpinDictionary::update_weight_by_pinyin_and_word(string pinyin, string 
 int ShuangpinDictionary::delete_by_pinyin_and_word(string pinyin, string word)
 {
     const auto direct_cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
-    if (direct_cuts.empty() || remove_delimiters(quanpin::join_segments(direct_cuts.front())) != remove_delimiters(pinyin))
+    const auto normalized_shuangpin = normalize_shuangpin_to_quanpin_input(pinyin);
+    const auto shuangpin_cuts = quanpin::cut_pinyin_by_mode(normalized_shuangpin, "correction");
+    const size_t han_count = HelpcodeUtils::count_han_chars(word);
+    const bool direct_key_matches_word = !direct_cuts.empty() && direct_cuts.front().size() == han_count;
+    const bool shuangpin_key_matches_word = !shuangpin_cuts.empty() && shuangpin_cuts.front().size() == han_count;
+    if ((!direct_key_matches_word && shuangpin_key_matches_word) ||
+        (direct_cuts.empty() ||
+         remove_delimiters(quanpin::join_segments(direct_cuts.front())) != remove_delimiters(pinyin)))
     {
-        pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
+        pinyin = normalized_shuangpin;
     }
     const auto cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
     if (cuts.empty()) return ERROR_CODE;
