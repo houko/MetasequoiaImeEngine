@@ -699,6 +699,10 @@ Segments cut_pinyin_greedy(const std::string &pinyin, bool intact_only)
         auto cut = cut_one_piece_min_segments(part, intact_only);
         if (cut.empty())
         {
+            if (intact_only && !part.empty())
+            {
+                return {};
+            }
             if (!part.empty())
             {
                 merged.push_back(part);
