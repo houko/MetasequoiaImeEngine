@@ -371,6 +371,8 @@ void test_shuangpin_dictionary_create_pin_delete()
     const WordItem *created = find_candidate(after_create, test_word);
     expect(created != nullptr, fmt::format("Expected '{}' to appear after create.", test_word));
     const int created_weight = created->weight;
+    const std::string canonical_pinyin = created->canonical_pinyin;
+    expect(!canonical_pinyin.empty(), "Created candidate should expose its canonical pinyin.");
 
     expect(dictionary.update_weight_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
            "Shuangpin update_weight_by_pinyin_and_word should succeed.");
@@ -381,8 +383,8 @@ void test_shuangpin_dictionary_create_pin_delete()
     expect(pinned->weight > created_weight,
            fmt::format("Expected pinned weight to increase from {}, got {}.", created_weight, pinned->weight));
 
-    expect(dictionary.delete_by_pinyin_and_word(raw_shuangpin, test_word) == ShuangpinDictionary::OK,
-           "Shuangpin delete_by_pinyin_and_word should succeed.");
+    expect(dictionary.delete_by_pinyin_and_word(canonical_pinyin, test_word) == ShuangpinDictionary::OK,
+           "Shuangpin delete_by_pinyin_and_word should accept a canonical pinyin key.");
 
     const auto after_delete = dictionary.generateSeries(raw_shuangpin, segmented_shuangpin);
     expect(find_candidate(after_delete, test_word) == nullptr,

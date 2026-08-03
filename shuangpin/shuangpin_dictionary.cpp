@@ -707,7 +707,7 @@ int ShuangpinDictionary::delete_by_pinyin_and_word(string pinyin, string word)
     const auto cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
     if (cuts.empty()) return ERROR_CODE;
     const std::string normalized = quanpin::join_segments(cuts.front());
-    if (delete_data(quanpin_db_, build_quanpin_sql_for_deleting_word(normalized, word)) != OK)
+    if (delete_data(quanpin_db_, build_quanpin_sql_for_deleting_canonical_word(normalized, word)) != OK)
     {
         return ERROR_CODE;
     }
@@ -975,10 +975,10 @@ std::string ShuangpinDictionary::build_quanpin_sql_for_updating_word(std::string
                        table, escape_sql_text(pinyin), escape_sql_text(word));
 }
 
-std::string ShuangpinDictionary::build_quanpin_sql_for_deleting_word(std::string pinyin, const std::string &word) const
+std::string ShuangpinDictionary::build_quanpin_sql_for_deleting_canonical_word(
+    const std::string &canonical_pinyin, const std::string &word) const
 {
-    pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
-    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    const auto cuts = quanpin::cut_pinyin_by_mode(canonical_pinyin, "correction");
     if (cuts.empty())
     {
         return "";

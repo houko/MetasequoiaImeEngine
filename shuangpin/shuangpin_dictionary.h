@@ -102,7 +102,12 @@ class ShuangpinDictionary
                                                      const std::string &value) const;
     std::string build_quanpin_sql_for_updating_word(const std::string &word) const;
     std::string build_quanpin_sql_for_updating_word(std::string pinyin, const std::string &word) const;
-    std::string build_quanpin_sql_for_deleting_word(std::string pinyin, const std::string &word) const;
+    // The caller has already resolved the input (raw shuangpin or canonical
+    // quanpin) to a canonical quanpin key before reaching this helper.  Do
+    // not normalize it as shuangpin again: canonical keys are database keys,
+    // not user input.
+    std::string build_quanpin_sql_for_deleting_canonical_word(const std::string &canonical_pinyin,
+                                                              const std::string &word) const;
     bool do_validate(std::string key, std::string jp, std::string value) const;
 
   private:
