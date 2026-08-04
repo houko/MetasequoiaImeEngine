@@ -153,8 +153,11 @@ std::vector<std::string> pinyin_segments(const std::string &key)
 std::string pinyin_table(const std::string &key)
 {
     const auto segments = pinyin_segments(key);
-    return segments.empty() ? std::string{} :
-           "tbl_" + std::to_string(segments.size()) + "_" + std::string(1, segments.front().front());
+    if (segments.empty()) return {};
+    // Must match quanpin::build_table_name / dict build: 8+ syllables -> tbl_others_*.
+    if (segments.size() >= 8)
+        return "tbl_others_" + std::string(1, segments.front().front());
+    return "tbl_" + std::to_string(segments.size()) + "_" + std::string(1, segments.front().front());
 }
 
 std::string jianpin(const std::vector<std::string> &segments)
