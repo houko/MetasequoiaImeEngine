@@ -37,8 +37,7 @@ string ShuangpinUtil::local_appdata_path = ShuangpinUtil::get_local_appdata_path
 
 namespace
 {
-std::string find_source_by_code(const std::unordered_map<std::string, std::string> &mapping,
-                                const std::string &code)
+std::string find_source_by_code(const std::unordered_map<std::string, std::string> &mapping, const std::string &code)
 {
     for (const auto &[source, mapped_code] : mapping)
     {
@@ -55,10 +54,10 @@ unordered_set<string> &initialize_quanpin_set()
 {
     static unordered_set<string> tmp_set;
     ifstream pinyin_path(ShuangpinUtil::get_local_appdata_path() //
-                         + path_seperator                     //
-                         + ShuangpinUtil::app_name            //
-                         + path_seperator                     //
-                         + pinyin_file_name                   //
+                         + path_seperator                        //
+                         + ShuangpinUtil::app_name               //
+                         + path_seperator                        //
+                         + pinyin_file_name                      //
     );
     if (!pinyin_path.is_open())
     {
@@ -113,9 +112,14 @@ string ShuangpinUtil::cvt_single_sp_to_pinyin(string sp_str, const ShuangpinProf
     }
     for (const auto &ym : ym_list)
     {
-        if (quanpin_set.count(sm + ym) > 0)
+        std::string normalized_ym = ym;
+        if (ym == "v" && (sm == "j" || sm == "q" || sm == "x" || sm == "y"))
         {
-            res = sm + ym;
+            normalized_ym = "u";
+        }
+        if (quanpin_set.count(sm + normalized_ym) > 0)
+        {
+            res = sm + normalized_ym;
         }
     }
     return res;
@@ -251,8 +255,7 @@ bool ShuangpinUtil::is_all_complete_pinyin(string pure_pinyin, string seg_pinyin
  * @param seg_shangpin Segmented shuangpin
  * @return string Segmented quanpin
  */
-string ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(string seg_shangpin,
-                                                                   const ShuangpinProfile &profile)
+string ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(string seg_shangpin, const ShuangpinProfile &profile)
 {
     vector<string> splitted_shuangpin;
     boost::split(splitted_shuangpin, seg_shangpin, boost::is_any_of("'"));

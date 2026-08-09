@@ -16,4 +16,5 @@ struct ShuangpinProfile
 const ShuangpinProfile &GetXiaoheShuangpinProfile();
 const ShuangpinProfile &GetZiranmaShuangpinProfile();
 const ShuangpinProfile &GetShoudaoShuangpinProfile();
+const ShuangpinProfile &GetMicrosoftShuangpinProfile();
 const ShuangpinProfile &GetShuangpinProfile(std::string_view name);

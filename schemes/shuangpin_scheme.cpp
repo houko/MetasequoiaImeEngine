@@ -8,6 +8,17 @@ bool is_alpha_vk(UINT vk)
 {
     return vk >= 'A' && vk <= 'Z';
 }
+
+bool is_microsoft_ing_key(UINT vk, WCHAR wch, const std::string &raw_input, const ShuangpinProfile &profile)
+{
+    if (profile.name != "microsoft" || vk != VK_OEM_1 || wch != L';')
+    {
+        return false;
+    }
+    const size_t separator = raw_input.find_last_of('\'');
+    const size_t chunk_length = separator == std::string::npos ? raw_input.size() : raw_input.size() - separator - 1;
+    return chunk_length % 2 == 1;
+}
 } // namespace
 
 ShuangpinScheme::ShuangpinScheme(const ShuangpinProfile &profile) : profile_(profile)
@@ -57,7 +68,8 @@ void ShuangpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
         return;
     }
 
-    if (!is_alpha_vk(vk))
+    const bool microsoft_ing_key = is_microsoft_ing_key(vk, wch, raw_input_, profile_);
+    if (!is_alpha_vk(vk) && !microsoft_ing_key)
     {
         return;
     }
@@ -70,6 +82,10 @@ void ShuangpinScheme::handle_key(UINT vk, UINT modifiers_down, WCHAR wch)
     else if (wch >= L'a' && wch <= L'z')
     {
         raw_input_.push_back(static_cast<char>(wch));
+    }
+    else if (microsoft_ing_key)
+    {
+        raw_input_.push_back(';');
     }
     else
     {
@@ -85,8 +101,7 @@ QueryRequest ShuangpinScheme::build_request() const
     request.raw_input.reserve(raw_input_.size());
     for (const char ch : raw_input_)
     {
-        request.raw_input.push_back(
-            ch == '\'' ? ch : static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        request.raw_input.push_back(ch == '\'' ? ch : static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
     }
     request.key_strokes = key_strokes_;
     request.valid = shuangpin::effective_input_length(request.raw_input) > 0;

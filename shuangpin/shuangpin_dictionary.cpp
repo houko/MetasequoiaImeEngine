@@ -473,6 +473,11 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
                 _pinyin_sequence_with_cases += lowerAlpha;
             }
         }
+        else if (profile_.name == "microsoft" && vk == VK_OEM_1 && wch == L';' && _pinyin_sequence.size() % 2 == 1)
+        {
+            _pinyin_sequence += ';';
+            _pinyin_sequence_with_cases += ';';
+        }
         else if (vk == VK_SPACE || (vk >= '0' && vk <= '9') || vk == VK_RETURN || vk == VK_SHIFT || vk == VK_ESCAPE)
         {
             if (vk == VK_RETURN || vk == VK_SHIFT || vk == VK_ESCAPE)
@@ -591,8 +596,7 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_for_creating
 
 int ShuangpinDictionary::create_word(string pinyin, string word)
 {
-    return create_word_from_quanpin(
-        shuangpin::normalize_input_with_delimiters(pinyin, profile_), std::move(word));
+    return create_word_from_quanpin(shuangpin::normalize_input_with_delimiters(pinyin, profile_), std::move(word));
 }
 
 int ShuangpinDictionary::create_word_from_quanpin(string pinyin, string word)
@@ -622,8 +626,7 @@ int ShuangpinDictionary::create_word_from_quanpin(string pinyin, string word)
         return ERROR_CODE;
     }
     (void)user_dictionary::record_user_insert(user_dictionary::default_user_db_path(),
-                                              user_dictionary::DictionaryKind::Pinyin,
-                                              pinyin, word, 10000);
+                                              user_dictionary::DictionaryKind::Pinyin, pinyin, word, 10000);
     /* 插入新词之后要清理缓存 */
     reset_cache();
     return OK;
@@ -671,15 +674,18 @@ int ShuangpinDictionary::update_weight_by_word(string word)
 int ShuangpinDictionary::update_weight_by_pinyin_and_word(string pinyin, string word)
 {
     const auto direct_cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
-    if (direct_cuts.empty() || remove_delimiters(quanpin::join_segments(direct_cuts.front())) != remove_delimiters(pinyin))
+    if (direct_cuts.empty() ||
+        remove_delimiters(quanpin::join_segments(direct_cuts.front())) != remove_delimiters(pinyin))
     {
         pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
     }
     const auto cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
-    if (cuts.empty()) return ERROR_CODE;
+    if (cuts.empty())
+        return ERROR_CODE;
     auto segments = cuts.front();
     const size_t han_count = HelpcodeUtils::count_han_chars(word);
-    if (segments.size() > han_count) segments.resize(han_count);
+    if (segments.size() > han_count)
+        segments.resize(han_count);
     const std::string normalized = quanpin::join_segments(segments);
     if (update_data(quanpin_db_, build_quanpin_sql_for_updating_word(normalized, word)) != OK)
     {
@@ -705,7 +711,8 @@ int ShuangpinDictionary::delete_by_pinyin_and_word(string pinyin, string word)
         pinyin = normalized_shuangpin;
     }
     const auto cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
-    if (cuts.empty()) return ERROR_CODE;
+    if (cuts.empty())
+        return ERROR_CODE;
     const std::string normalized = quanpin::join_segments(cuts.front());
     if (delete_data(quanpin_db_, build_quanpin_sql_for_deleting_canonical_word(normalized, word)) != OK)
     {
@@ -753,17 +760,12 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     std::vector<WordItem> candidate_list;
     try
     {
-        const auto flat_items =
-            quanpin::query_segments_keyed_flat(segments,
-                                               quanpin_db_,
-                                               quanpin_statement_cache_,
-                                               INT_MAX,
-                                               quanpin::QuerySource::Shuangpin);
+        const auto flat_items = quanpin::query_segments_keyed_flat(segments, quanpin_db_, quanpin_statement_cache_,
+                                                                   INT_MAX, quanpin::QuerySource::Shuangpin);
         candidate_list.reserve(flat_items.size());
         for (const auto &item : flat_items)
         {
-            candidate_list.emplace_back(pinyin_sequence, item.value, item.weight,
-                                        CandidateSource::Database, item.key);
+            candidate_list.emplace_back(pinyin_sequence, item.value, item.weight, CandidateSource::Database, item.key);
         }
     }
     catch (const std::exception &ex)
@@ -774,34 +776,32 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_from_quanpin_da
     return candidate_list;
 }
 
-std::optional<WordItem> ShuangpinDictionary::find_candidate(
-    const std::string &key, const std::string &value)
+std::optional<WordItem> ShuangpinDictionary::find_candidate(const std::string &key, const std::string &value)
 {
     const std::string table = quanpin::build_table_name(quanpin::split_segments(key));
-    if (!quanpin_db_ || table.empty()) return std::nullopt;
+    if (!quanpin_db_ || table.empty())
+        return std::nullopt;
     sqlite3_stmt *stmt = nullptr;
-    const std::string sql =
-        "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1";
-    if (sqlite3_prepare_v2(quanpin_db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return std::nullopt;
+    const std::string sql = "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1";
+    if (sqlite3_prepare_v2(quanpin_db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        return std::nullopt;
     std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(stmt, sqlite3_finalize);
     if (sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_step(stmt) != SQLITE_ROW)
         return std::nullopt;
-    return WordItem(key, value, sqlite3_column_int64(stmt, 0),
-                    CandidateSource::Database, key);
+    return WordItem(key, value, sqlite3_column_int64(stmt, 0), CandidateSource::Database, key);
 }
 
-vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_initial_from_quanpin_database(
-    const std::string &code, int limit)
+vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::query_initial_from_quanpin_database(const std::string &code,
+                                                                                               int limit)
 {
     if (quanpin_db_ == nullptr || code.size() != 1 || code.front() < 'a' || code.front() > 'z')
     {
         return {};
     }
 
-    const std::string initial =
-        ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(code, profile_);
+    const std::string initial = ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(code, profile_);
     const auto rows = quanpin::query_initial(quanpin_db_, initial, limit);
 
     vector<WordItem> candidate_list;
@@ -975,8 +975,8 @@ std::string ShuangpinDictionary::build_quanpin_sql_for_updating_word(std::string
                        table, escape_sql_text(pinyin), escape_sql_text(word));
 }
 
-std::string ShuangpinDictionary::build_quanpin_sql_for_deleting_canonical_word(
-    const std::string &canonical_pinyin, const std::string &word) const
+std::string ShuangpinDictionary::build_quanpin_sql_for_deleting_canonical_word(const std::string &canonical_pinyin,
+                                                                               const std::string &word) const
 {
     const auto cuts = quanpin::cut_pinyin_by_mode(canonical_pinyin, "correction");
     if (cuts.empty())
@@ -1079,13 +1079,12 @@ int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &
     // Keep at most one cloud/AI suggestion in the series cache for this key.
     if (source == CandidateSource::AiSuggestion || source == CandidateSource::CloudSuggestion)
     {
-        list.erase(std::remove_if(list.begin(), list.end(),
-                                  [source](const WordItem &item) { return item.source == source; }),
-                   list.end());
+        list.erase(
+            std::remove_if(list.begin(), list.end(), [source](const WordItem &item) { return item.source == source; }),
+            list.end());
     }
 
-    const auto exists =
-        std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
+    const auto exists = std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
     if (exists == list.end())
     {
         if (list.empty())
