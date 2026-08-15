@@ -2,7 +2,33 @@
 #include "../schemes/quanpin_scheme.h"
 #include "../schemes/shuangpin_scheme.h"
 #include "../schemes/wubi_scheme.h"
+#include "../shuangpin/shuangpin_query.h"
 #include <stdexcept>
+
+namespace
+{
+void ApplyShuangpinHelpcodeSegmentation(QueryRequest &request, const ShuangpinProfile &profile)
+{
+    if (request.scheme != SchemeType::Shuangpin || !request.enable_shuangpin_helpcode ||
+        shuangpin::detect_active_double_helpcode_length(request.raw_input, request.raw_input_with_cases, profile) != 2)
+    {
+        return;
+    }
+
+    const size_t helpcode_length = 2;
+    const std::string base_raw_input = request.raw_input.substr(0, request.raw_input.size() - helpcode_length);
+    const std::string base_raw_input_with_cases =
+        request.raw_input_with_cases.substr(0, request.raw_input_with_cases.size() - helpcode_length);
+    const std::string base_segmentation = shuangpin::segment_input(base_raw_input, profile);
+    const std::string help_codes =
+        request.raw_input_with_cases.substr(request.raw_input_with_cases.size() - helpcode_length);
+
+    request.raw_segmentation =
+        shuangpin::apply_segmentation_cases(base_segmentation, base_raw_input_with_cases) + "'" + help_codes;
+    request.normalized_segmentation = shuangpin::to_quanpin_segmentation(base_segmentation, profile) + "'" + help_codes;
+    request.segmentation = request.normalized_segmentation;
+}
+} // namespace
 
 ImeSession::ImeSession(SchemeType scheme_type, const ShuangpinProfile &shuangpin_profile)
     : provider_registry_(shuangpin_profile), shuangpin_profile_(shuangpin_profile), scheme_(create_scheme(scheme_type))
@@ -157,6 +183,7 @@ void ImeSession::refresh_candidates()
     state_.request = scheme_->build_request();
     state_.request.enable_shuangpin_helpcode = enable_shuangpin_helpcode_;
     state_.request.enable_quanpin_helpcode = enable_quanpin_helpcode_;
+    ApplyShuangpinHelpcodeSegmentation(state_.request, shuangpin_profile_);
 
     if (!state_.request.valid)
     {

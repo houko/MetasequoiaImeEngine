@@ -14,6 +14,21 @@ std::string segment_chunk(const std::string &chunk, const ShuangpinProfile &prof
 {
     return chunk.empty() ? std::string{} : ShuangpinUtil::pinyin_segmentation(chunk, profile);
 }
+
+size_t raw_length_for_effective_prefix(const std::string &raw_input, size_t effective_length)
+{
+    size_t raw_length = 0;
+    size_t effective_count = 0;
+    while (raw_length < raw_input.size() && effective_count < effective_length)
+    {
+        if (raw_input[raw_length] != '\'')
+        {
+            ++effective_count;
+        }
+        ++raw_length;
+    }
+    return raw_length;
+}
 }
 
 std::string segment_input(const std::string &raw_input, const ShuangpinProfile &profile)
@@ -74,6 +89,28 @@ std::string normalize_input(const std::string &raw_input, const ShuangpinProfile
 size_t effective_input_length(const std::string &raw_input)
 {
     return remove_manual_delimiters(raw_input).size();
+}
+
+size_t detect_active_double_helpcode_length(const std::string &raw_input,
+                                            const std::string &raw_input_with_cases,
+                                            const ShuangpinProfile &profile)
+{
+    const std::string effective_input = remove_manual_delimiters(raw_input);
+    const std::string effective_input_with_cases = remove_manual_delimiters(
+        raw_input_with_cases.empty() ? raw_input : raw_input_with_cases);
+    if (!ShuangpinUtil::IsFullHelpMode(effective_input_with_cases, profile))
+    {
+        return 0;
+    }
+
+    const size_t base_length = effective_input.size() - 2;
+    const size_t raw_base_length = raw_length_for_effective_prefix(raw_input, base_length);
+    if (raw_base_length < raw_input.size() && raw_input[raw_base_length] == '\'')
+    {
+        return 0;
+    }
+
+    return is_complete_input(raw_input.substr(0, raw_base_length), profile) ? 2 : 0;
 }
 
 bool is_complete_input(const std::string &raw_input, const ShuangpinProfile &profile)

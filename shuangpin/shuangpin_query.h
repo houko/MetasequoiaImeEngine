@@ -16,6 +16,9 @@ std::string normalize_input_with_delimiters(const std::string &raw_input,
                                             const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
 std::string remove_manual_delimiters(const std::string &text);
 size_t effective_input_length(const std::string &raw_input);
+size_t detect_active_double_helpcode_length(
+    const std::string &raw_input, const std::string &raw_input_with_cases,
+    const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
 bool is_complete_input(const std::string &raw_input,
                        const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
 std::string apply_segmentation_cases(const std::string &segmented_input, const std::string &raw_input_with_cases);

@@ -81,10 +81,10 @@ std::vector<WordItem> query_normal(ShuangpinDictionary &dictionary, const QueryR
 }
 
 std::optional<HelpcodeQuery> build_full_helpcode_query(const std::string &raw_input,
-                                                        const std::string &pure_input_with_cases,
+                                                        const std::string &raw_input_with_cases,
                                                         const ShuangpinProfile &profile)
 {
-    if (!ShuangpinUtil::IsFullHelpMode(pure_input_with_cases, profile))
+    if (shuangpin::detect_active_double_helpcode_length(raw_input, raw_input_with_cases, profile) != 2)
     {
         return std::nullopt;
     }
@@ -93,11 +93,8 @@ std::optional<HelpcodeQuery> build_full_helpcode_query(const std::string &raw_in
     query.base_raw_input = trim_trailing_letters_preserve_delimiters(raw_input, 2);
     query.base_pure_input = shuangpin::remove_manual_delimiters(query.base_raw_input);
     query.base_segmentation = shuangpin::segment_input(query.base_raw_input, profile);
-    if (has_manual_delimiters(raw_input) && !segmented_parts_are_all_two_chars(query.base_segmentation))
-    {
-        return std::nullopt;
-    }
-    query.help_codes = ShuangpinUtil::GetFullHelpCodes(pure_input_with_cases);
+    query.help_codes =
+        ShuangpinUtil::GetFullHelpCodes(shuangpin::remove_manual_delimiters(raw_input_with_cases));
     return query;
 }
 
@@ -159,7 +156,7 @@ std::vector<WordItem> ShuangpinEngine::query(const QueryRequest &request)
     {
         // 双码辅助
         if (const auto full_helpcode =
-                build_full_helpcode_query(raw_input, pure_input_with_cases, profile_))
+                build_full_helpcode_query(raw_input, raw_input_with_cases, profile_))
         {
             return dictionary_.generate_with_helpcodes(full_helpcode->base_pure_input,
                                                        full_helpcode->base_segmentation,
