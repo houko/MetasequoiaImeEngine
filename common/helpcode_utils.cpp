@@ -302,30 +302,22 @@ SingleHelpcodeMatch match_single_helpcode(const std::string &word, const std::st
         {
             return SingleHelpcodeMatch::None;
         }
-        if (found->second[0] == help_code[0])
-        {
-            return SingleHelpcodeMatch::First;
-        }
-        if (found->second.size() > 1 && found->second[1] == help_code[0])
-        {
-            return SingleHelpcodeMatch::Last;
-        }
-        return SingleHelpcodeMatch::None;
+        const bool matches_first = found->second[0] == help_code[0];
+        const bool matches_last = found->second.size() > 1 && found->second[1] == help_code[0];
+        return matches_first && matches_last ? SingleHelpcodeMatch::Both
+             : matches_first                 ? SingleHelpcodeMatch::First
+             : matches_last                  ? SingleHelpcodeMatch::Last
+                                             : SingleHelpcodeMatch::None;
     }
 
     const auto first = keymap.find(get_first_han_char(word));
-    if (first != keymap.end() && first->second[0] == help_code[0])
-    {
-        return SingleHelpcodeMatch::First;
-    }
-
     const auto last = keymap.find(get_last_han_char(word));
-    if (last != keymap.end() && last->second[0] == help_code[0])
-    {
-        return SingleHelpcodeMatch::Last;
-    }
-
-    return SingleHelpcodeMatch::None;
+    const bool matches_first = first != keymap.end() && first->second[0] == help_code[0];
+    const bool matches_last = last != keymap.end() && last->second[0] == help_code[0];
+    return matches_first && matches_last ? SingleHelpcodeMatch::Both
+         : matches_first                 ? SingleHelpcodeMatch::First
+         : matches_last                  ? SingleHelpcodeMatch::Last
+                                         : SingleHelpcodeMatch::None;
 }
 
 bool matches_double_helpcodes(const std::string &word, const std::string &help_codes)

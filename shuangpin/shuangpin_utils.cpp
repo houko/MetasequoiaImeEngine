@@ -279,7 +279,7 @@ string ShuangpinUtil::convert_seg_shuangpin_to_seg_complete_pinyin(string seg_sh
  * @brief 判断是否是全码辅助
  *
  * @param pinyin
- * @return true 是偶数个汉字，且最后一个拼音是大写字母，且前面的拼音都是完整的双拼
+ * @return true 长度为偶数，且末尾两个辅助码中至少一个是大写字母，且前面都是完整的双拼
  * @return false
  */
 bool ShuangpinUtil::IsFullHelpMode(std::string pinyin, const ShuangpinProfile &profile)
@@ -292,12 +292,33 @@ bool ShuangpinUtil::IsFullHelpMode(std::string pinyin, const ShuangpinProfile &p
     auto pure_pinyin = pinyin.substr(0, len - 2);
     if (is_all_complete_pinyin(pure_pinyin, pinyin_segmentation(pure_pinyin, profile)))
     {
-        if (pinyin[len - 1] >= 'A' && pinyin[len - 1] <= 'Z')
+        const bool first_helpcode_is_upper = pinyin[len - 2] >= 'A' && pinyin[len - 2] <= 'Z';
+        const bool second_helpcode_is_upper = pinyin[len - 1] >= 'A' && pinyin[len - 1] <= 'Z';
+        if (first_helpcode_is_upper || second_helpcode_is_upper)
         {
             return true;
         }
     }
     return false;
+}
+
+std::string ShuangpinUtil::GetFullHelpCodes(std::string pinyin)
+{
+    if (pinyin.size() < 2)
+    {
+        return "";
+    }
+
+    const bool reverse = pinyin[pinyin.size() - 2] >= 'A' && pinyin[pinyin.size() - 2] <= 'Z';
+    std::string help_codes = pinyin.substr(pinyin.size() - 2, 2);
+    std::transform(help_codes.begin(), help_codes.end(), help_codes.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    if (reverse)
+    {
+        std::swap(help_codes[0], help_codes[1]);
+    }
+    return help_codes;
 }
 
 namespace shuangpin

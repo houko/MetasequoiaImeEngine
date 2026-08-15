@@ -46,8 +46,8 @@ std::string escape_sql_text(std::string text)
 } // namespace
 
 ShuangpinDictionary::ShuangpinDictionary(const ShuangpinProfile &profile)
-    : profile_(profile), _kb_input_sequence(100), _cached_buffer(128), _cached_buffer_sgl(128), _cached_buffer_dbl(128),
-      _cached_buffer_series(128)
+    : profile_(profile), _kb_input_sequence(100), _cached_buffer(128), _cached_buffer_sgl(128),
+      _cached_buffer_sgl_reversed(128), _cached_buffer_dbl(128), _cached_buffer_series(128)
 {
     // 最多可以输出 64 个汉字，拼音最多可以接受 128 个字符
     ime_pinyin::im_set_max_lens(128, 64);
@@ -217,21 +217,26 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
     const string &pinyin_sequence                                //
 )
 {
-    if (candidate_list.empty())
+    if (candidate_list.empty() || help_code.size() != 1)
         return;
+    const bool prefer_last_helpcode = help_code[0] >= 'A' && help_code[0] <= 'Z';
+    const string normalized_help_code(1, static_cast<char>(std::tolower(static_cast<unsigned char>(help_code[0]))));
     vector<ShuangpinDictionary::WordItem> first_helpcode_matched_list;
     vector<ShuangpinDictionary::WordItem> last_helpcode_matched_list;
     vector<ShuangpinDictionary::WordItem> left_helpcode_matched_list; // 被筛完之后剩下的
 
     for (const auto &cand : candidate_list)
     {
-        switch (HelpcodeUtils::match_single_helpcode(cand.word, help_code))
+        switch (HelpcodeUtils::match_single_helpcode(cand.word, normalized_help_code))
         {
         case HelpcodeUtils::SingleHelpcodeMatch::First:
             first_helpcode_matched_list.push_back(cand);
             break;
         case HelpcodeUtils::SingleHelpcodeMatch::Last:
             last_helpcode_matched_list.push_back(cand);
+            break;
+        case HelpcodeUtils::SingleHelpcodeMatch::Both:
+            (prefer_last_helpcode ? last_helpcode_matched_list : first_helpcode_matched_list).push_back(cand);
             break;
         case HelpcodeUtils::SingleHelpcodeMatch::None:
             left_helpcode_matched_list.push_back(cand);
@@ -240,8 +245,16 @@ void ShuangpinDictionary::filter_with_single_helpcode(           //
     }
 
     /* 辅助码筛出来的候选列表 */
-    result_list.insert(result_list.end(), first_helpcode_matched_list.begin(), first_helpcode_matched_list.end());
-    result_list.insert(result_list.end(), last_helpcode_matched_list.begin(), last_helpcode_matched_list.end());
+    if (prefer_last_helpcode)
+    {
+        result_list.insert(result_list.end(), last_helpcode_matched_list.begin(), last_helpcode_matched_list.end());
+        result_list.insert(result_list.end(), first_helpcode_matched_list.begin(), first_helpcode_matched_list.end());
+    }
+    else
+    {
+        result_list.insert(result_list.end(), first_helpcode_matched_list.begin(), first_helpcode_matched_list.end());
+        result_list.insert(result_list.end(), last_helpcode_matched_list.begin(), last_helpcode_matched_list.end());
+    }
     /* 把原始拼音的候选列表加到辅助码模式的候选列表后面 */
     const std::string original_segmentation = ShuangpinUtil::pinyin_segmentation(pinyin_sequence, profile_);
     auto original_candidate_list = generateSeries(pinyin_sequence, original_segmentation);
@@ -301,13 +314,16 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_with_helpcod
 )
 {
     vector<WordItem> candidate_list;
+    const bool reversed_single_helpcode =
+        help_codes.size() == 1 && help_codes[0] >= 'A' && help_codes[0] <= 'Z';
     // Check cache first
     if (help_codes.size() == 1)
     {
-        if (_cached_buffer_sgl.get(pinyin_sequence))
+        auto &single_helpcode_cache =
+            reversed_single_helpcode ? _cached_buffer_sgl_reversed : _cached_buffer_sgl;
+        if (const auto cached = single_helpcode_cache.get(pinyin_sequence))
         {
-            candidate_list = _cached_buffer_sgl.get(pinyin_sequence).value();
-            return candidate_list;
+            return cached.value();
         }
     }
     else if (help_codes.size() == 2)
@@ -330,7 +346,9 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_with_helpcod
             help_codes,              //
             pinyin_sequence          //
         );
-        _cached_buffer_sgl.insert(pinyin_sequence, result_list);
+        auto &single_helpcode_cache =
+            reversed_single_helpcode ? _cached_buffer_sgl_reversed : _cached_buffer_sgl;
+        single_helpcode_cache.insert(pinyin_sequence, result_list);
     }
     else if (help_codes.size() == 2)
     {
@@ -525,10 +543,7 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
     { // 全码辅助，结果只包含根据辅助码筛出来的候选词部分
         _pure_pinyin_sequence = _pinyin_sequence.substr(0, _help_mode_raw_pos);
         _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence, profile_);
-        _pinyin_helpcodes = _pinyin_sequence.substr(     //
-            _help_mode_raw_pos,                          //
-            _pinyin_sequence.size() - _help_mode_raw_pos //
-        );
+        _pinyin_helpcodes = ShuangpinUtil::GetFullHelpCodes(_pinyin_sequence_with_cases);
         _cur_candidate_list = generate_with_helpcodes( //
             _pure_pinyin_sequence,                     //
             _pinyin_segmentation,                      //
@@ -549,7 +564,8 @@ int ShuangpinDictionary::handleVkCode(UINT vk, UINT modifiers_down, WCHAR wch)
             { /* 双拼部分是完整的拼音，需要触发辅助码 */
                 _pure_pinyin_sequence = _pinyin_sequence.substr(0, _pinyin_sequence.size() - 1);
                 _pinyin_segmentation = ShuangpinUtil::pinyin_segmentation(_pure_pinyin_sequence, profile_);
-                _pinyin_helpcodes = _pinyin_sequence.substr(_pinyin_sequence.size() - 1, 1);
+                _pinyin_helpcodes =
+                    _pinyin_sequence_with_cases.substr(_pinyin_sequence_with_cases.size() - 1, 1);
                 _cur_candidate_list = generate_with_helpcodes( //
                     _pure_pinyin_sequence,                     //
                     _pinyin_segmentation,                      //
@@ -1061,6 +1077,7 @@ void ShuangpinDictionary::reset_cache()
 {
     _cached_buffer.clear();
     _cached_buffer_sgl.clear();
+    _cached_buffer_sgl_reversed.clear();
     _cached_buffer_dbl.clear();
     _cached_buffer_series.clear();
 }
@@ -1136,8 +1153,9 @@ int ShuangpinDictionary::insert_word_to_active_helpcode_cache(const std::string 
     };
 
     const bool updated_single = insert_into_cache(_cached_buffer_sgl);
+    const bool updated_reversed_single = insert_into_cache(_cached_buffer_sgl_reversed);
     const bool updated_double = insert_into_cache(_cached_buffer_dbl);
-    return updated_single || updated_double ? 0 : -1;
+    return updated_single || updated_reversed_single || updated_double ? 0 : -1;
 }
 
 bool ShuangpinDictionary::is_all_complete_pinyin()

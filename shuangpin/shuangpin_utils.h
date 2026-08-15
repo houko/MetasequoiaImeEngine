@@ -36,4 +36,5 @@ class ShuangpinUtil
 
     static bool IsFullHelpMode(std::string pinyin,
                                const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
+    static std::string GetFullHelpCodes(std::string pinyin);
 };

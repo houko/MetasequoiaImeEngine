@@ -25,6 +25,7 @@ enum class SingleHelpcodeMatch
     None,
     First,
     Last,
+    Both,
 };
 
 SingleHelpcodeMatch match_single_helpcode(const std::string &word, const std::string &help_code);
@@ -53,6 +54,9 @@ std::vector<TWordItem> reorder_candidates_with_single_helpcode(const std::vector
             break;
         case SingleHelpcodeMatch::Last:
             last_helpcode_matched_list.push_back(cand);
+            break;
+        case SingleHelpcodeMatch::Both:
+            first_helpcode_matched_list.push_back(cand);
             break;
         case SingleHelpcodeMatch::None:
             left_helpcode_matched_list.push_back(cand);
