@@ -13,6 +13,7 @@ enum class CandidateSource
     EnglishDictionary,
     QuickPhrase,
     Emoji,
+    Kaomoji,
     Generated,
     Fallback,
 };
