@@ -12,6 +12,7 @@ enum class CandidateSource
     AiSuggestion,
     EnglishDictionary,
     QuickPhrase,
+    Emoji,
     Generated,
     Fallback,
 };
