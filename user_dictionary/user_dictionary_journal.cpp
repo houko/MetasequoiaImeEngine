@@ -160,6 +160,64 @@ std::string pinyin_table(const std::string &key)
     return "tbl_" + std::to_string(segments.size()) + "_" + std::string(1, segments.front().front());
 }
 
+constexpr std::int64_t kManagedWeightCeiling = 100000000LL;
+constexpr std::int64_t kManagedWeightFloor = 1LL;
+constexpr std::int64_t kRebalanceGap = 1000LL;
+constexpr size_t kRebalanceCount = 16;
+
+std::int64_t clamp_managed_weight(std::int64_t weight)
+{
+    if (weight < kManagedWeightFloor) return kManagedWeightFloor;
+    if (weight > kManagedWeightCeiling) return kManagedWeightCeiling;
+    return weight;
+}
+
+size_t utf8_char_count(const std::string &text)
+{
+    return static_cast<size_t>(std::count_if(
+        text.begin(), text.end(), [](unsigned char ch) { return (ch & 0xC0) != 0x80; }));
+}
+
+std::string candidate_dictionary_key(const WordItem &item, const std::string &context_key)
+{
+    if (!item.canonical_pinyin.empty()) return item.canonical_pinyin;
+    std::string item_key = item.pinyin;
+    const auto context_segments = pinyin_segments(context_key);
+    if (context_segments.size() <= 1) return item_key;
+    auto item_segments = context_segments;
+    const size_t char_count = utf8_char_count(item.word);
+    if (char_count > 0 && item_segments.size() > char_count) item_segments.resize(char_count);
+    item_key.clear();
+    for (size_t j = 0; j < item_segments.size(); ++j)
+    {
+        if (j) item_key += '\'';
+        item_key += item_segments[j];
+    }
+    return item_key;
+}
+
+bool update_pinyin_weight(sqlite3 *main_db, sqlite3_stmt *journal_upsert, const std::string &key,
+                          const std::string &value, std::int64_t weight)
+{
+    weight = clamp_managed_weight(weight);
+    const std::string table = pinyin_table(key);
+    if (table.empty() || main_db == nullptr || journal_upsert == nullptr) return false;
+    auto stmt = prepare(main_db, "UPDATE \"" + table + "\" SET weight=?1 WHERE key=?2 AND value=?3");
+    return stmt && sqlite3_bind_int64(stmt.get(), 1, weight) == SQLITE_OK && bind_text(stmt.get(), 2, key) &&
+           bind_text(stmt.get(), 3, value) && sqlite3_step(stmt.get()) == SQLITE_DONE &&
+           write_upsert_journal(journal_upsert, DictionaryKind::Pinyin, key, value, weight);
+}
+
+size_t ranking_target(size_t rank, const std::string &mode, int linear_step, bool force_top)
+{
+    if (force_top) return 0;
+    if (mode == "halve") return rank / 2;
+    if (mode == "linear")
+        return rank > static_cast<size_t>(linear_step) ? rank - static_cast<size_t>(linear_step) : 0;
+    if (mode == "promote") return rank > 4 ? 4 : rank - 1;
+    return 0;
+}
+
 std::string jianpin(const std::vector<std::string> &segments)
 {
     std::string result;
@@ -294,7 +352,14 @@ private:
 bool ensure_user_database(const std::string &user_db_path)
 {
     UserDatabase db(user_db_path);
-    return static_cast<bool>(db);
+    if (!db) return false;
+    // Drop ranking rows left by the old rebalance staircase so installer replay
+    // cannot bury shipped frequencies such as 先/xian under negative weights.
+    sqlite3_exec(db.get(),
+                 "DELETE FROM user_dictionary_operations "
+                 "WHERE dictionary='pinyin' AND operation='upsert' AND weight < 1",
+                 nullptr, nullptr, nullptr);
+    return true;
 }
 
 bool record_upsert(const std::string &user_db_path, DictionaryKind kind, const std::string &key,
@@ -575,8 +640,12 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
 
     std::vector<WordItem> database_candidates;
     for (const auto &item : ordered_candidates)
-        if (item.source == CandidateSource::Database || item.source == CandidateSource::UserDatabase)
-            database_candidates.push_back(item);
+    {
+        if (item.source != CandidateSource::Database && item.source != CandidateSource::UserDatabase)
+            continue;
+        if (candidate_dictionary_key(item, context_key) != entry_key) continue;
+        database_candidates.push_back(item);
+    }
     const auto selected = std::find_if(database_candidates.begin(), database_candidates.end(), [&](const WordItem &item) {
         return item.word == value;
     });
@@ -588,17 +657,14 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         if (reset) { bind_text(reset.get(),1,context_key); bind_text(reset.get(),2,entry_key); bind_text(reset.get(),3,value); sqlite3_step(reset.get()); }
         return true;
     }
-    size_t target = 0;
-    if (!force_top && mode == "halve") target = rank / 2;
-    else if (!force_top && mode == "linear") target = rank > static_cast<size_t>(linear_step) ? rank - linear_step : 0;
-    else if (!force_top && mode == "promote") target = rank > 4 ? 4 : rank - 1;
+    const size_t target = ranking_target(rank, mode, linear_step, force_top);
     auto main_db = open_database(main_db_path, SQLITE_OPEN_READWRITE);
     if (!main_db) return false;
     // Keep learned weights in the same general range as the shipped dictionary
     // (currently below 77 million). Large spacing is unnecessary and previously
-    // caused local rebalances to create values around 10^12.
-    constexpr std::int64_t kManagedWeightCeiling = 100000000LL;
-    constexpr std::int64_t kRebalanceGap = 1000LL;
+    // caused local rebalances to create values around 10^12. A later bug used a
+    // tiny `upper` (weight=1 rare words) as the staircase base and wrote
+    // negative weights onto neighboring keys from query_series().
     std::int64_t new_weight = 0;
     const bool top_near_limit = target == 0 &&
         database_candidates[0].weight > (std::numeric_limits<std::int64_t>::max)() - 1000;
@@ -606,8 +672,9 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         ? database_candidates[0].weight + 1000
         : (target == 0 ? database_candidates[0].weight : database_candidates[target - 1].weight);
     const std::int64_t lower = database_candidates[target].weight;
+    const bool oversized = upper > kManagedWeightCeiling || lower > kManagedWeightCeiling;
     bool need_rebalance = top_near_limit || lower == (std::numeric_limits<std::int64_t>::max)() ||
-        upper <= lower || upper > kManagedWeightCeiling;
+        upper <= lower || oversized;
     if (!need_rebalance)
     {
         if (upper == lower + 1)
@@ -636,13 +703,35 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
             new_weight = lower + (upper - lower) / 2;
         }
     }
+    if (need_rebalance && !oversized && !top_near_limit && target != 0)
+    {
+        const size_t rebalance_end =
+            (std::min)(database_candidates.size(), target + kRebalanceCount);
+        const std::int64_t last_index = static_cast<std::int64_t>(rebalance_end - 1);
+        const std::int64_t last_weight =
+            upper - kRebalanceGap - (last_index - static_cast<std::int64_t>(target)) * kRebalanceGap;
+        if (last_weight < kManagedWeightFloor)
+        {
+            // Equal/low weights have no room for a 16-slot descending staircase.
+            // Promote only the selected row instead of writing negatives onto
+            // neighbors (and onto shorter-syllable singles mixed into the UI list).
+            const std::int64_t cluster = (std::max)(upper, lower);
+            if (cluster > (std::numeric_limits<std::int64_t>::max)() - kRebalanceGap)
+            {
+                // Fall through to the ceiling compact path below.
+            }
+            else
+            {
+                new_weight = clamp_managed_weight(cluster + kRebalanceGap);
+                need_rebalance = false;
+            }
+        }
+    }
     if (need_rebalance)
     {
-        constexpr size_t rebalance_count = 16;
         const size_t rebalance_begin = target;
         const size_t rebalance_end =
-            (std::min)(database_candidates.size(), rebalance_begin + rebalance_count);
-        const bool oversized = upper > kManagedWeightCeiling || lower > kManagedWeightCeiling;
+            (std::min)(database_candidates.size(), rebalance_begin + kRebalanceCount);
         std::int64_t base = target == 0
             ? kManagedWeightCeiling - kRebalanceGap
             : kManagedWeightCeiling;
@@ -654,57 +743,26 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         }
         sqlite3_exec(main_db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
         sqlite3_exec(user_db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
-        for (size_t i = rebalance_begin; i < rebalance_end; ++i)
+        bool rebalance_ok = true;
+        for (size_t i = rebalance_begin; i < rebalance_end && rebalance_ok; ++i)
         {
-            const auto &item = database_candidates[i];
-            std::string item_key =
-                item.canonical_pinyin.empty() ? item.pinyin : item.canonical_pinyin;
-            const auto context_segments = pinyin_segments(context_key);
-            if (item.canonical_pinyin.empty() && context_segments.size() > 1)
-            {
-                auto item_segments = context_segments;
-                const size_t char_count = static_cast<size_t>(
-                    std::count_if(item.word.begin(), item.word.end(), [](unsigned char ch) { return (ch & 0xC0) != 0x80; }));
-                if (char_count > 0 && item_segments.size() > char_count) item_segments.resize(char_count);
-                item_key.clear();
-                for (size_t j = 0; j < item_segments.size(); ++j)
-                {
-                    if (j) item_key += '\'';
-                    item_key += item_segments[j];
-                }
-            }
-            const std::string table = pinyin_table(item_key);
-            auto stmt = prepare(main_db.get(), "UPDATE \"" + table + "\" SET weight=?1 WHERE key=?2 AND value=?3");
-            const std::int64_t weight = base - static_cast<std::int64_t>(i) * kRebalanceGap;
-            if (!stmt || sqlite3_bind_int64(stmt.get(),1,weight) != SQLITE_OK || !bind_text(stmt.get(),2,item_key) ||
-                !bind_text(stmt.get(),3,item.word) || sqlite3_step(stmt.get()) != SQLITE_DONE)
-            {
-                sqlite3_exec(main_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
-                sqlite3_exec(user_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
-                return false;
-            }
-            if (!write_upsert_journal(journal_upsert.get(), DictionaryKind::Pinyin, item_key, item.word, weight))
-            {
-                sqlite3_exec(main_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
-                sqlite3_exec(user_db.get(),"ROLLBACK",nullptr,nullptr,nullptr);
-                return false;
-            }
+            const std::int64_t weight = clamp_managed_weight(
+                base - static_cast<std::int64_t>(i) * kRebalanceGap);
+            rebalance_ok = update_pinyin_weight(main_db.get(), journal_upsert.get(), entry_key,
+                                                database_candidates[i].word, weight);
         }
-        sqlite3_exec(main_db.get(), "COMMIT", nullptr, nullptr, nullptr);
-        sqlite3_exec(user_db.get(), "COMMIT", nullptr, nullptr, nullptr);
+        sqlite3_exec(main_db.get(), rebalance_ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+        sqlite3_exec(user_db.get(), rebalance_ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+        if (!rebalance_ok) return false;
         new_weight = target == 0
             ? base + kRebalanceGap
             : base - static_cast<std::int64_t>(target) * kRebalanceGap + kRebalanceGap / 2;
     }
-    const std::string table = pinyin_table(entry_key);
-    auto update = prepare(main_db.get(), "UPDATE \"" + table + "\" SET weight=?1 WHERE key=?2 AND value=?3");
-    const bool ok = update && sqlite3_bind_int64(update.get(),1,new_weight) == SQLITE_OK &&
-        bind_text(update.get(),2,entry_key) && bind_text(update.get(),3,value) && sqlite3_step(update.get()) == SQLITE_DONE;
+    new_weight = clamp_managed_weight(new_weight);
+    const bool ok = update_pinyin_weight(main_db.get(), journal_upsert.get(), entry_key, value, new_weight);
     if (ok)
     {
         if (ranking_changed) *ranking_changed = true;
-        (void)write_upsert_journal(
-            journal_upsert.get(), DictionaryKind::Pinyin, entry_key, value, new_weight);
         auto reset = prepare(user_db.get(), "DELETE FROM candidate_selection_state WHERE context_key=?1 AND entry_key=?2 AND value=?3");
         if (reset) { bind_text(reset.get(),1,context_key); bind_text(reset.get(),2,entry_key); bind_text(reset.get(),3,value); sqlite3_step(reset.get()); }
     }
@@ -753,6 +811,11 @@ ReplayResult replay(const std::string &user_db_path, const std::string &main_db_
         const std::string operation = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 3));
         const std::int64_t weight = sqlite3_column_int64(rows.get(), 4);
         const std::string display = reinterpret_cast<const char *>(sqlite3_column_text(rows.get(), 5));
+        if (kind == "pinyin" && operation == "upsert" && weight < 1)
+        {
+            ++result.skipped;
+            continue;
+        }
         bool ok = false;
         if (kind == "pinyin") ok = apply_pinyin(main_db.get(), key, value, operation, weight);
         else if (kind == "wubi") ok = apply_simple(main_db.get(), "wubi86", "key", "value", key, value, operation, weight);

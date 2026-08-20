@@ -33,6 +33,7 @@ bool record_pinyin_upsert_from_database(const std::string &main_db_path, const s
 struct ReplayResult
 {
     int applied = 0;
+    int skipped = 0;
     int failed = 0;
     std::string error;
 };
