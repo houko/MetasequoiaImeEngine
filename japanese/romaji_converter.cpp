@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -132,5 +133,109 @@ std::string HiraganaToKatakana(std::string_view hiragana)
         }
     }
     return boost::locale::conv::utf_to_utf<char>(codepoints);
+}
+
+const std::vector<std::pair<std::string, std::string>> &KanaToRomajiTable()
+{
+    static const std::vector<std::pair<std::string, std::string>> table = [] {
+        std::vector<std::pair<std::string, std::string>> entries;
+        entries.reserve(RomajiTable().size());
+        for (const auto &entry : RomajiTable())
+            entries.emplace_back(entry.second, entry.first);
+        std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+            if (a.first.size() != b.first.size()) return a.first.size() > b.first.size();
+            return a.second.size() > b.second.size();
+        });
+        std::vector<std::pair<std::string, std::string>> unique;
+        for (const auto &entry : entries)
+        {
+            if (std::none_of(unique.begin(), unique.end(),
+                             [&](const auto &seen) { return seen.first == entry.first; }))
+                unique.push_back(entry);
+        }
+        return unique;
+    }();
+    return table;
+}
+
+std::string HiraganaToRomaji(std::string_view kana)
+{
+    std::u32string codepoints = boost::locale::conv::utf_to_utf<char32_t>(kana.data(), kana.data() + kana.size());
+    for (char32_t &codepoint : codepoints)
+    {
+        if (codepoint >= U'ァ' && codepoint <= U'ヶ')
+            codepoint -= 0x60;
+    }
+    const std::string hiragana = boost::locale::conv::utf_to_utf<char>(codepoints);
+    std::string romaji;
+    const auto &table = KanaToRomajiTable();
+    size_t index = 0;
+    while (index < hiragana.size())
+    {
+        if (hiragana.compare(index, 3, "っ") == 0 || hiragana.compare(index, 3, "ッ") == 0)
+        {
+            index += 3;
+            std::string next;
+            for (const auto &entry : table)
+            {
+                if (index + entry.first.size() <= hiragana.size() &&
+                    hiragana.compare(index, entry.first.size(), entry.first) == 0)
+                {
+                    next = entry.second;
+                    break;
+                }
+            }
+            if (!next.empty() && IsConsonant(next.front()))
+                romaji.push_back(next.front());
+            else
+                romaji += "xtsu";
+            continue;
+        }
+        if (hiragana.compare(index, 3, "ん") == 0)
+        {
+            romaji.push_back('n');
+            index += 3;
+            continue;
+        }
+        bool matched = false;
+        for (const auto &entry : table)
+        {
+            if (index + entry.first.size() <= hiragana.size() &&
+                hiragana.compare(index, entry.first.size(), entry.first) == 0)
+            {
+                romaji += entry.second;
+                index += entry.first.size();
+                matched = true;
+                break;
+            }
+        }
+        if (!matched)
+        {
+            const unsigned char lead = static_cast<unsigned char>(hiragana[index]);
+            index += lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : 4;
+        }
+    }
+    return romaji;
+}
+
+std::vector<std::string> KanaForRomajiPrefix(std::string_view pending)
+{
+    if (pending.empty()) return {};
+    std::string prefix(pending);
+    std::transform(prefix.begin(), prefix.end(), prefix.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    std::vector<std::string> kana;
+    for (const auto &entry : RomajiTable())
+    {
+        if (entry.first.size() >= prefix.size() &&
+            entry.first.compare(0, prefix.size(), prefix) == 0)
+        {
+            kana.push_back(entry.second);
+        }
+    }
+    std::sort(kana.begin(), kana.end());
+    kana.erase(std::unique(kana.begin(), kana.end()), kana.end());
+    return kana;
 }
 } // namespace japanese
