@@ -71,6 +71,31 @@ bool EnglishDictionary::ready()
     return ensure_query_statement();
 }
 
+namespace
+{
+std::string QueryGloss(sqlite3_stmt *statement, const std::string &key)
+{
+    sqlite3_reset(statement);
+    sqlite3_clear_bindings(statement);
+    if (sqlite3_bind_text(statement, 1, key.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK)
+        return {};
+    if (sqlite3_step(statement) != SQLITE_ROW)
+        return {};
+    const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement, 0));
+    return value == nullptr ? std::string{} : std::string(value);
+}
+} // namespace
+
+std::string EnglishDictionary::query_chinese_gloss(const std::string &english)
+{
+    return english.empty() || !ensure_gloss_statements() ? std::string{} : QueryGloss(en_zh_statement_, english);
+}
+
+std::string EnglishDictionary::query_english_gloss(const std::string &chinese)
+{
+    return chinese.empty() || !ensure_gloss_statements() ? std::string{} : QueryGloss(zh_en_statement_, chinese);
+}
+
 bool EnglishDictionary::ensure_schema(const std::string &db_path)
 {
     sqlite3 *database = nullptr;
@@ -101,29 +126,26 @@ bool EnglishDictionary::ensure_schema(const std::string &db_path)
     if (columns != nullptr)
         sqlite3_finalize(columns);
 
+    bool english_words_ok = false;
     if (!has_table)
     {
-        const bool created = sqlite3_exec(database,
+        english_words_ok = sqlite3_exec(database,
                                           "CREATE TABLE english_words("
                                           "word TEXT COLLATE BINARY NOT NULL,display TEXT NOT NULL,"
-                                          "weight INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(word,display)) WITHOUT ROWID;"
-                                          "PRAGMA user_version=2",
+                                          "weight INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(word,display)) WITHOUT ROWID;",
                                           nullptr, nullptr, nullptr) == SQLITE_OK;
-        sqlite3_close(database);
-        return created;
     }
-
-    if (has_weight && composite_primary_key)
+    else if (has_weight && composite_primary_key)
     {
-        sqlite3_close(database);
-        return true;
+        english_words_ok = true;
     }
-
-    const char *copy_sql = has_weight ? "INSERT OR IGNORE INTO english_words_new(word,display,weight) "
+    else
+    {
+        const char *copy_sql = has_weight ? "INSERT OR IGNORE INTO english_words_new(word,display,weight) "
                                         "SELECT word,display,weight FROM english_words;"
                                       : "INSERT OR IGNORE INTO english_words_new(word,display,weight) "
                                         "SELECT word,display,0 FROM english_words;";
-    const bool ok = sqlite3_exec(database, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) == SQLITE_OK &&
+        english_words_ok = sqlite3_exec(database, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) == SQLITE_OK &&
                     sqlite3_exec(database,
                                  "CREATE TABLE english_words_new("
                                  "word TEXT COLLATE BINARY NOT NULL,display TEXT NOT NULL,"
@@ -132,11 +154,20 @@ bool EnglishDictionary::ensure_schema(const std::string &db_path)
                     sqlite3_exec(database, copy_sql, nullptr, nullptr, nullptr) == SQLITE_OK &&
                     sqlite3_exec(database, "DROP TABLE english_words", nullptr, nullptr, nullptr) == SQLITE_OK &&
                     sqlite3_exec(database, "ALTER TABLE english_words_new RENAME TO english_words", nullptr, nullptr,
-                                 nullptr) == SQLITE_OK &&
-                    sqlite3_exec(database, "PRAGMA user_version=2", nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_exec(database, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+                                 nullptr) == SQLITE_OK;
+        sqlite3_exec(database, english_words_ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    }
+
+    const bool gloss_tables_ok = english_words_ok &&
+        sqlite3_exec(database,
+                     "CREATE TABLE IF NOT EXISTS en_zh_glosses("
+                     "english TEXT COLLATE BINARY PRIMARY KEY,chinese_gloss TEXT NOT NULL) WITHOUT ROWID;"
+                     "CREATE TABLE IF NOT EXISTS zh_en_glosses("
+                     "chinese TEXT COLLATE BINARY PRIMARY KEY,english_gloss TEXT NOT NULL) WITHOUT ROWID;"
+                     "PRAGMA user_version=3;",
+                     nullptr, nullptr, nullptr) == SQLITE_OK;
     sqlite3_close(database);
-    return ok;
+    return gloss_tables_ok;
 }
 
 bool EnglishDictionary::ensure_query_statement()
@@ -168,8 +199,35 @@ bool EnglishDictionary::ensure_query_statement()
     return true;
 }
 
+bool EnglishDictionary::ensure_gloss_statements()
+{
+    if (en_zh_statement_ != nullptr && zh_en_statement_ != nullptr)
+        return true;
+    if (!ensure_query_statement())
+        return false;
+    if (sqlite3_prepare_v2(db_, "SELECT chinese_gloss FROM en_zh_glosses WHERE english=?1", -1,
+                           &en_zh_statement_, nullptr) != SQLITE_OK ||
+        sqlite3_prepare_v2(db_, "SELECT english_gloss FROM zh_en_glosses WHERE chinese=?1", -1,
+                           &zh_en_statement_, nullptr) != SQLITE_OK)
+    {
+        close_database();
+        return false;
+    }
+    return true;
+}
+
 void EnglishDictionary::close_database()
 {
+    if (en_zh_statement_ != nullptr)
+    {
+        sqlite3_finalize(en_zh_statement_);
+        en_zh_statement_ = nullptr;
+    }
+    if (zh_en_statement_ != nullptr)
+    {
+        sqlite3_finalize(zh_en_statement_);
+        zh_en_statement_ = nullptr;
+    }
     if (query_statement_ != nullptr)
     {
         sqlite3_finalize(query_statement_);

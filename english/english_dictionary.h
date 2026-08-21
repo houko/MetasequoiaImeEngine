@@ -16,15 +16,20 @@ class EnglishDictionary
     EnglishDictionary &operator=(const EnglishDictionary &) = delete;
 
     std::vector<WordItem> query_prefix(const std::string &prefix, size_t limit = 5);
+    std::string query_chinese_gloss(const std::string &english);
+    std::string query_english_gloss(const std::string &chinese);
     bool ready();
     static bool ensure_schema(const std::string &db_path);
 
   private:
     bool ensure_query_statement();
+    bool ensure_gloss_statements();
     void close_database();
 
   private:
     std::string db_path_;
     sqlite3 *db_ = nullptr;
     sqlite3_stmt *query_statement_ = nullptr;
+    sqlite3_stmt *en_zh_statement_ = nullptr;
+    sqlite3_stmt *zh_en_statement_ = nullptr;
 };
