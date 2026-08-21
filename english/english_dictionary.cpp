@@ -79,10 +79,15 @@ std::string QueryGloss(sqlite3_stmt *statement, const std::string &key)
     sqlite3_clear_bindings(statement);
     if (sqlite3_bind_text(statement, 1, key.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK)
         return {};
-    if (sqlite3_step(statement) != SQLITE_ROW)
-        return {};
-    const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement, 0));
-    return value == nullptr ? std::string{} : std::string(value);
+    std::string result;
+    if (sqlite3_step(statement) == SQLITE_ROW)
+    {
+        const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement, 0));
+        if (value != nullptr)
+            result = value;
+    }
+    sqlite3_reset(statement);
+    return result;
 }
 } // namespace
 
@@ -94,6 +99,34 @@ std::string EnglishDictionary::query_chinese_gloss(const std::string &english)
 std::string EnglishDictionary::query_english_gloss(const std::string &chinese)
 {
     return chinese.empty() || !ensure_gloss_statements() ? std::string{} : QueryGloss(zh_en_statement_, chinese);
+}
+
+bool EnglishDictionary::upsert_gloss(const std::string &db_path, bool chinese_to_english, const std::string &key,
+                                     const std::string &gloss)
+{
+    if (db_path.empty() || key.empty() || gloss.empty() || !ensure_schema(db_path))
+        return false;
+
+    sqlite3 *database = nullptr;
+    if (sqlite3_open_v2(db_path.c_str(), &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nullptr) != SQLITE_OK)
+    {
+        if (database != nullptr)
+            sqlite3_close(database);
+        return false;
+    }
+    sqlite3_busy_timeout(database, 250);
+    sqlite3_stmt *statement = nullptr;
+    const char *sql = chinese_to_english
+                          ? "INSERT OR REPLACE INTO zh_en_glosses(chinese,english_gloss) VALUES(?1,?2)"
+                          : "INSERT OR REPLACE INTO en_zh_glosses(english,chinese_gloss) VALUES(?1,?2)";
+    bool ok = sqlite3_prepare_v2(database, sql, -1, &statement, nullptr) == SQLITE_OK &&
+              sqlite3_bind_text(statement, 1, key.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+              sqlite3_bind_text(statement, 2, gloss.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+              sqlite3_step(statement) == SQLITE_DONE;
+    if (statement != nullptr)
+        sqlite3_finalize(statement);
+    sqlite3_close(database);
+    return ok;
 }
 
 bool EnglishDictionary::ensure_schema(const std::string &db_path)

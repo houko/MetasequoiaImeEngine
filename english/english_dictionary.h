@@ -20,6 +20,8 @@ class EnglishDictionary
     std::string query_english_gloss(const std::string &chinese);
     bool ready();
     static bool ensure_schema(const std::string &db_path);
+    static bool upsert_gloss(const std::string &db_path, bool chinese_to_english, const std::string &key,
+                             const std::string &gloss);
 
   private:
     bool ensure_query_statement();
