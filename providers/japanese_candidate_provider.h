@@ -1,0 +1,36 @@
+#pragma once
+
+#include "candidate_provider.h"
+#include "../japanese/japanese_sentence_decoder.h"
+#include <sqlite3.h>
+#include <memory>
+#include <string>
+
+class JapaneseCandidateProvider : public ICandidateProvider
+{
+  public:
+    explicit JapaneseCandidateProvider(std::string db_path = {});
+    ~JapaneseCandidateProvider() override;
+
+    JapaneseCandidateProvider(const JapaneseCandidateProvider &) = delete;
+    JapaneseCandidateProvider &operator=(const JapaneseCandidateProvider &) = delete;
+
+    std::vector<WordItem> query(const QueryRequest &request) override;
+    std::optional<WordItem> find_candidate(SchemeType scheme, const std::string &key,
+                                           const std::string &value) override;
+    void reset_cache() override;
+    int create_word(SchemeType, std::string, std::string) override;
+    int update_weight_by_pinyin_and_word(SchemeType, std::string, std::string) override;
+    int delete_by_pinyin_and_word(SchemeType, std::string, std::string) override;
+    int cache_dynamic_candidate(SchemeType, const std::string &, const std::string &, CandidateSource) override;
+    int cache_dynamic_candidate_for_request(const QueryRequest &, const std::string &, CandidateSource) override;
+
+  private:
+    bool ensure_query_statement();
+    void close_database();
+
+    std::string db_path_;
+    sqlite3 *db_ = nullptr;
+    sqlite3_stmt *query_statement_ = nullptr;
+    std::unique_ptr<japanese::JapaneseSentenceDecoder> sentence_decoder_;
+};

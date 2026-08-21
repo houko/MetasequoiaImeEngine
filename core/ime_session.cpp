@@ -2,6 +2,7 @@
 #include "../schemes/quanpin_scheme.h"
 #include "../schemes/shuangpin_scheme.h"
 #include "../schemes/wubi_scheme.h"
+#include "../schemes/japanese_romaji_scheme.h"
 #include "../shuangpin/shuangpin_query.h"
 #include <stdexcept>
 
@@ -142,6 +143,15 @@ int ImeSession::cache_dynamic_candidate(const std::string &pinyin, const std::st
     return provider_registry_.cache_dynamic_candidate(current_scheme_type(), pinyin, word, source);
 }
 
+void ImeSession::replace_japanese_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
+{
+    if (scheme_->type() != SchemeType::JapaneseRomaji) return;
+    auto *japanese_scheme = dynamic_cast<JapaneseRomajiScheme *>(scheme_.get());
+    if (!japanese_scheme) return;
+    japanese_scheme->set_raw_input(raw_input, raw_input_with_cases);
+    refresh_candidates();
+}
+
 int ImeSession::cache_dynamic_candidate_for_current_request(const std::string &word, CandidateSource source)
 {
     return provider_registry_.cache_dynamic_candidate_for_request(state_.request, word, source);
@@ -204,6 +214,8 @@ std::unique_ptr<IInputScheme> ImeSession::create_scheme(SchemeType scheme_type) 
         return std::make_unique<QuanpinScheme>();
     case SchemeType::Wubi:
         return std::make_unique<WubiScheme>();
+    case SchemeType::JapaneseRomaji:
+        return std::make_unique<JapaneseRomajiScheme>();
     default:
         throw std::runtime_error("Unknown scheme type.");
     }

@@ -20,6 +20,7 @@ class ImeSession
     void replace_shuangpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
     void replace_quanpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
     void replace_wubi_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
+    void replace_japanese_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
     void reset();
     void reset_cache();
     int create_word(std::string pinyin, std::string word);
