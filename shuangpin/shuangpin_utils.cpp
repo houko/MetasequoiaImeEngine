@@ -1,15 +1,18 @@
+#include <algorithm>
+#include <cctype>
+#include <unordered_set>
 #include <utf8.h>
 #include <spdlog/spdlog.h>
 #include <vector>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include "shuangpin_utils.h"
+#include "../quanpin/quanpin_utils.h"
 
 using namespace std;
 
 const string ShuangpinUtil::app_name = "metasequoiaime";
 static string path_seperator = "\\";
-static string pinyin_file_name = "pinyin.txt";
 
 /**
  * @brief Get the local app data path from environment variable LOCALAPPDATA
@@ -48,31 +51,26 @@ std::string find_source_by_code(const std::unordered_map<std::string, std::strin
     }
     return {};
 }
-} // namespace
 
-unordered_set<string> &initialize_quanpin_set()
+const std::unordered_set<std::string> &shuangpin_pinyin_set()
 {
-    static unordered_set<string> tmp_set;
-    ifstream pinyin_path(ShuangpinUtil::get_local_appdata_path() //
-                         + path_seperator                        //
-                         + ShuangpinUtil::app_name               //
-                         + path_seperator                        //
-                         + pinyin_file_name                      //
-    );
-    if (!pinyin_path.is_open())
-    {
-        (void)0;
-    }
-    string line;
-    while (getline(pinyin_path, line))
-    {
-        line.erase(remove_if(line.begin(), line.end(), [](unsigned char x) { return isspace(x); }), line.end());
-        tmp_set.insert(line);
-    }
-    return tmp_set;
-}
+    static const std::unordered_set<std::string> pinyin_set = [] {
+        auto result = quanpin::intact_pinyin_set();
 
-unordered_set<string> &ShuangpinUtil::quanpin_set = initialize_quanpin_set();
+        // Keep this compiled fallback identical to the historical pinyin.txt used
+        // for shuangpin validation.  The full quanpin table accepts a few extra
+        // spellings whose presence changes ambiguous shuangpin segmentation.
+        result.insert("eng");
+        for (const char *pinyin : {"chua", "den", "fiao", "jve", "kei", "lo", "lue", "nou", "nue", "nun",
+                                   "qve", "xve", "yo", "yve", "zhei"})
+        {
+            result.erase(pinyin);
+        }
+        return result;
+    }();
+    return pinyin_set;
+}
+} // namespace
 
 /**
  * @brief Convert one shuangpin syllable to quanpin using the selected profile
@@ -117,7 +115,7 @@ string ShuangpinUtil::cvt_single_sp_to_pinyin(string sp_str, const ShuangpinProf
         {
             normalized_ym = "u";
         }
-        if (quanpin_set.count(sm + normalized_ym) > 0)
+        if (shuangpin_pinyin_set().count(sm + normalized_ym) > 0)
         {
             res = sm + normalized_ym;
         }
@@ -145,7 +143,8 @@ string ShuangpinUtil::pinyin_segmentation(string sp_str, const ShuangpinProfile 
         {
             // Try to cut two chars to test
             string cur_sp = sp_str.substr(range_start, 2);
-            if (quanpin_set.count(cvt_single_sp_to_pinyin(boost::algorithm::to_lower_copy(cur_sp), profile)) > 0)
+            if (shuangpin_pinyin_set().count(
+                    cvt_single_sp_to_pinyin(boost::algorithm::to_lower_copy(cur_sp), profile)) > 0)
             {
                 res = res + "'" + cur_sp;
                 range_start += 2;

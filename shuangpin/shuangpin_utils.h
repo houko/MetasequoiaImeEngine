@@ -1,11 +1,6 @@
 #pragma once
 
-#include <sstream>
 #include <string>
-#include <unordered_set>
-#include <fstream>
-#include <algorithm>
-#include <cctype>
 #include "shuangpin_profile.h"
 
 namespace shuangpin
@@ -20,8 +15,6 @@ class ShuangpinUtil
     static std::string get_local_appdata_path();
     static std::string local_appdata_path;
     static const std::string app_name;
-
-    static std::unordered_set<std::string> &quanpin_set;
 
     static std::string cvt_single_sp_to_pinyin(std::string sp_str,
                                                const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
