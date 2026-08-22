@@ -16,12 +16,11 @@ namespace japanese
 //   SpellingParser + SpellingId -> ConvertRomaji mora (hiragana chunks)
 //   Half spelling id (shengmu)  -> pending romaji prefix (k, ky, sh, ...)
 //   Lemma (word + spell ids)    -> Mozc token (reading + surface + cost)
-//   DictTrie exact/prefix walk  -> reading_index_ exact + sorted prefix range
+//   DictTrie exact/prefix walk  -> binary search over reading-sorted model records
 //   NGram unigram score         -> word_cost + connection_cost (right_id, left_id)
 //   Matrix row per Pinyin char  -> matrix row per mora
 //   Candidate 0                 -> Viterbi/n-best path covering the reading
 //   prepare_candidates          -> lemmas matching a prefix of the remaining reading
-//   im_get_predicts             -> Predict(): lemmas whose surface starts with history
 //
 // Search procedure (same as MatrixSearch::search + prepare_candidates):
 // 1. Parse romaji into a mora sequence; leftover letters are a half-id.

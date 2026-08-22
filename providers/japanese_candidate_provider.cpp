@@ -3,12 +3,34 @@
 #include "../japanese/romaji_converter.h"
 #include "../quanpin/quanpin_query.h"
 #include <algorithm>
+#include <future>
 #include <unordered_set>
 #include <utility>
 
 namespace
 {
 constexpr int kNoMutation = 0;
+
+using SharedDecoder = std::shared_ptr<const japanese::JapaneseSentenceDecoder>;
+
+const std::shared_future<SharedDecoder> &SharedSentenceDecoder()
+{
+    // The sentence model is immutable. Start loading it as soon as the provider registry
+    // is created, then share the result between all input sessions in this server process.
+    // A query arriving before completion waits for this one task instead of loading another copy.
+    static const auto future = std::async(std::launch::async, []() -> SharedDecoder {
+                                   try
+                                   {
+                                       auto decoder = std::make_shared<japanese::JapaneseSentenceDecoder>();
+                                       return decoder->ready() ? std::move(decoder) : nullptr;
+                                   }
+                                   catch (...)
+                                   {
+                                       return nullptr;
+                                   }
+                               }).share();
+    return future;
+}
 
 void AppendUnique(std::vector<WordItem> &items, std::unordered_set<std::string> &seen,
                   const std::string &code, const std::string &value, std::int64_t weight,
@@ -37,6 +59,7 @@ std::string EscapeLikePrefix(const std::string &code)
 JapaneseCandidateProvider::JapaneseCandidateProvider(std::string db_path)
     : db_path_(db_path.empty() ? quanpin::get_default_db_path() : std::move(db_path))
 {
+    (void)SharedSentenceDecoder();
 }
 
 JapaneseCandidateProvider::~JapaneseCandidateProvider()
@@ -54,10 +77,19 @@ std::vector<WordItem> JapaneseCandidateProvider::query(const QueryRequest &reque
     std::vector<WordItem> candidates;
     std::unordered_set<std::string> seen;
     const auto conversion = japanese::ConvertRomaji(request.raw_input);
+    const bool kana_first = japanese::IsSingleKanaConversion(conversion);
 
-    if (!sentence_decoder_)
-        sentence_decoder_ = std::make_unique<japanese::JapaneseSentenceDecoder>();
-    if (sentence_decoder_->ready())
+    if (kana_first)
+    {
+        AppendUnique(candidates, seen, request.raw_input_with_cases, conversion.hiragana, 1000000,
+                     CandidateSource::Generated);
+        AppendUnique(candidates, seen, request.raw_input_with_cases,
+                     japanese::HiraganaToKatakana(conversion.hiragana), 999999,
+                     CandidateSource::Generated);
+    }
+
+    if (!sentence_decoder_) sentence_decoder_ = SharedSentenceDecoder().get();
+    if (sentence_decoder_ && sentence_decoder_->ready())
     {
         const auto pending_kana = japanese::KanaForRomajiPrefix(conversion.pending);
         if (!conversion.hiragana.empty() && !conversion.pending.empty())
@@ -110,7 +142,7 @@ std::vector<WordItem> JapaneseCandidateProvider::query(const QueryRequest &reque
         }
     }
 
-    if (!conversion.hiragana.empty())
+    if (!conversion.hiragana.empty() && !kana_first)
     {
         AppendUnique(candidates, seen, request.raw_input_with_cases, conversion.hiragana, 1000000,
                      CandidateSource::Generated);
@@ -145,7 +177,8 @@ std::optional<WordItem> JapaneseCandidateProvider::find_candidate(
 void JapaneseCandidateProvider::reset_cache()
 {
     close_database();
-    sentence_decoder_.reset();
+    // The sentence model is immutable and shared process-wide. Keep it warm when
+    // SQLite/user-dictionary caches are reset.
 }
 
 int JapaneseCandidateProvider::create_word(SchemeType, std::string, std::string) { return kNoMutation; }

@@ -135,6 +135,14 @@ std::string HiraganaToKatakana(std::string_view hiragana)
     return boost::locale::conv::utf_to_utf<char>(codepoints);
 }
 
+bool IsSingleKanaConversion(const RomajiConversion &conversion)
+{
+    if (!conversion.complete || conversion.hiragana.empty()) return false;
+    const auto codepoints = boost::locale::conv::utf_to_utf<char32_t>(
+        conversion.hiragana.data(), conversion.hiragana.data() + conversion.hiragana.size());
+    return codepoints.size() == 1 && codepoints.front() >= U'ぁ' && codepoints.front() <= U'ゖ';
+}
+
 const std::vector<std::pair<std::string, std::string>> &KanaToRomajiTable()
 {
     static const std::vector<std::pair<std::string, std::string>> table = [] {

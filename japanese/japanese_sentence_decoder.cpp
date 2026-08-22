@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
-#include <limits>
 #include <string_view>
 #include <unordered_set>
 
@@ -37,6 +36,15 @@ struct ModelToken
 
 constexpr char kMagic[8] = {'M', 'S', 'J', 'P', 'D', 'T', '1', '\0'};
 constexpr std::int64_t kUnknownKanaCost = 12000;
+constexpr size_t kShortPrefixCandidateCount = 64;
+
+size_t FirstUtf8CodePointLength(std::string_view text)
+{
+    if (text.empty()) return 0;
+    const unsigned char lead = static_cast<unsigned char>(text.front());
+    const size_t length = lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : 4;
+    return (std::min)(length, text.size());
+}
 
 std::vector<size_t> Utf8Boundaries(const std::string &text)
 {
@@ -89,40 +97,62 @@ bool JapaneseSentenceDecoder::Load(const std::string &path)
                      static_cast<std::streamsize>(connection_costs_.size() * sizeof(std::int16_t))))
         return false;
 
-    std::string strings(static_cast<size_t>(header.string_size), '\0');
+    strings_.assign(static_cast<size_t>(header.string_size), '\0');
     stream.seekg(static_cast<std::streamoff>(header.string_offset));
-    if (!stream.read(strings.data(), static_cast<std::streamsize>(strings.size()))) return false;
+    if (!stream.read(strings_.data(), static_cast<std::streamsize>(strings_.size()))) return false;
 
     connection_size_ = header.connection_size;
     tokens_.reserve(records.size());
     for (const auto &record : records)
     {
-        if (static_cast<std::uint64_t>(record.reading_offset) + record.reading_length > strings.size() ||
-            static_cast<std::uint64_t>(record.surface_offset) + record.surface_length > strings.size() ||
+        if (static_cast<std::uint64_t>(record.reading_offset) + record.reading_length > strings_.size() ||
+            static_cast<std::uint64_t>(record.surface_offset) + record.surface_length > strings_.size() ||
             record.left_id >= connection_size_ || record.right_id >= connection_size_)
             return false;
         Token token;
-        token.reading.assign(strings.data() + record.reading_offset, record.reading_length);
-        token.surface.assign(strings.data() + record.surface_offset, record.surface_length);
+        token.reading_offset = record.reading_offset;
+        token.reading_length = record.reading_length;
+        token.surface_offset = record.surface_offset;
+        token.surface_length = record.surface_length;
         token.left_id = record.left_id;
         token.right_id = record.right_id;
         token.word_cost = record.word_cost;
-        const auto index = static_cast<std::uint32_t>(tokens_.size());
         tokens_.push_back(std::move(token));
-        reading_index_[tokens_.back().reading].push_back(index);
     }
 
-    tokens_by_reading_.resize(tokens_.size());
-    tokens_by_surface_.resize(tokens_.size());
-    for (std::uint32_t i = 0; i < tokens_.size(); ++i)
+    // Version 1 models are emitted in reading order. Keeping the file order lets us
+    // binary-search the compact records directly and avoids building two million-scale
+    // indexes on the first Japanese keystroke.
+    if (!std::is_sorted(tokens_.begin(), tokens_.end(), [this](const Token &a, const Token &b) {
+            return Reading(a) < Reading(b);
+        }))
+        return false;
+
+    // Pending romaji such as "k" expands to several one-kana prefix queries. Those
+    // ranges are by far the largest, so cache their best token IDs while the model is
+    // already being warmed in the background. Readings are sorted, making each group
+    // contiguous and keeping this pass linear with only a tiny permanent index.
+    size_t group_start = 0;
+    while (group_start < tokens_.size())
     {
-        tokens_by_reading_[i] = i;
-        tokens_by_surface_[i] = i;
+        const auto first_reading = Reading(tokens_[group_start]);
+        const auto prefix_length = FirstUtf8CodePointLength(first_reading);
+        if (prefix_length == 0) return false;
+        const std::string prefix(first_reading.substr(0, prefix_length));
+        std::vector<std::uint32_t> best;
+        best.reserve(kShortPrefixCandidateCount);
+        size_t group_end = group_start;
+        for (; group_end < tokens_.size(); ++group_end)
+        {
+            const auto reading = Reading(tokens_[group_end]);
+            if (reading.size() < prefix_length || reading.compare(0, prefix_length, prefix) != 0)
+                break;
+            KeepBestToken(best, static_cast<std::uint32_t>(group_end), kShortPrefixCandidateCount);
+        }
+        SortTokenIds(best);
+        short_prefix_index_.emplace(prefix, std::move(best));
+        group_start = group_end;
     }
-    std::sort(tokens_by_reading_.begin(), tokens_by_reading_.end(),
-              [this](std::uint32_t a, std::uint32_t b) { return tokens_[a].reading < tokens_[b].reading; });
-    std::sort(tokens_by_surface_.begin(), tokens_by_surface_.end(),
-              [this](std::uint32_t a, std::uint32_t b) { return tokens_[a].surface < tokens_[b].surface; });
     return !tokens_.empty();
 }
 
@@ -135,65 +165,126 @@ int JapaneseSentenceDecoder::ConnectionCost(std::uint16_t right_id, std::uint16_
 JapaneseLemma JapaneseSentenceDecoder::MakeLemma(std::uint32_t token_id) const
 {
     const Token &token = tokens_[token_id];
-    return {token.reading, token.surface, token.left_id, token.right_id, token.word_cost, token_id};
+    return {std::string(Reading(token)), std::string(Surface(token)), token.left_id, token.right_id,
+            token.word_cost, token_id};
+}
+
+std::string_view JapaneseSentenceDecoder::Reading(const Token &token) const
+{
+    return {strings_.data() + token.reading_offset, token.reading_length};
+}
+
+std::string_view JapaneseSentenceDecoder::Surface(const Token &token) const
+{
+    return {strings_.data() + token.surface_offset, token.surface_length};
+}
+
+size_t JapaneseSentenceDecoder::LowerBoundReading(std::string_view reading) const
+{
+    const auto it = std::lower_bound(tokens_.begin(), tokens_.end(), reading,
+                                     [this](const Token &token, std::string_view value) {
+                                         return Reading(token) < value;
+                                     });
+    return static_cast<size_t>(it - tokens_.begin());
+}
+
+bool JapaneseSentenceDecoder::TokenCheaper(std::uint32_t a, std::uint32_t b) const
+{
+    if (tokens_[a].word_cost != tokens_[b].word_cost)
+        return tokens_[a].word_cost < tokens_[b].word_cost;
+    return a < b;
+}
+
+void JapaneseSentenceDecoder::KeepBestToken(std::vector<std::uint32_t> &best,
+                                            std::uint32_t token_id, size_t limit) const
+{
+    const auto cheaper = [this](std::uint32_t a, std::uint32_t b) { return TokenCheaper(a, b); };
+    if (best.size() < limit)
+    {
+        best.push_back(token_id);
+        if (best.size() == limit) std::make_heap(best.begin(), best.end(), cheaper);
+    }
+    else if (TokenCheaper(token_id, best.front()))
+    {
+        std::pop_heap(best.begin(), best.end(), cheaper);
+        best.back() = token_id;
+        std::push_heap(best.begin(), best.end(), cheaper);
+    }
+}
+
+void JapaneseSentenceDecoder::SortTokenIds(std::vector<std::uint32_t> &token_ids) const
+{
+    std::sort(token_ids.begin(), token_ids.end(),
+              [this](std::uint32_t a, std::uint32_t b) { return TokenCheaper(a, b); });
+}
+
+std::vector<JapaneseLemma> JapaneseSentenceDecoder::MakeLemmas(
+    const std::vector<std::uint32_t> &token_ids, size_t limit) const
+{
+    std::vector<JapaneseLemma> result;
+    const size_t count = (std::min)(limit, token_ids.size());
+    result.reserve(count);
+    for (size_t index = 0; index < count; ++index)
+        result.push_back(MakeLemma(token_ids[index]));
+    return result;
+}
+
+std::vector<JapaneseLemma> JapaneseSentenceDecoder::BestLemmas(
+    const std::vector<std::uint32_t> &token_ids, size_t limit) const
+{
+    std::vector<std::uint32_t> best;
+    best.reserve((std::min)(limit, token_ids.size()));
+    for (const auto token_id : token_ids)
+        KeepBestToken(best, token_id, limit);
+    SortTokenIds(best);
+    return MakeLemmas(best, limit);
 }
 
 std::vector<JapaneseLemma> JapaneseSentenceDecoder::ExactLemmas(const std::string &reading, size_t limit) const
 {
-    std::vector<JapaneseLemma> result;
-    if (!ready_ || reading.empty() || limit == 0) return result;
-    const auto found = reading_index_.find(reading);
-    if (found == reading_index_.end()) return result;
-    for (const std::uint32_t token_id : found->second)
+    if (!ready_ || reading.empty() || limit == 0) return {};
+    std::vector<std::uint32_t> matches;
+    for (size_t index = LowerBoundReading(reading); index < tokens_.size(); ++index)
     {
-        result.push_back(MakeLemma(token_id));
-        if (result.size() == limit) break;
+        if (Reading(tokens_[index]) != reading) break;
+        matches.push_back(static_cast<std::uint32_t>(index));
     }
-    std::sort(result.begin(), result.end(),
-              [](const JapaneseLemma &a, const JapaneseLemma &b) { return a.word_cost < b.word_cost; });
-    return result;
+    return BestLemmas(matches, limit);
 }
 
 std::vector<JapaneseLemma> JapaneseSentenceDecoder::PrefixLemmas(const std::string &reading_prefix,
                                                                  size_t limit) const
 {
-    std::vector<JapaneseLemma> result;
-    if (!ready_ || reading_prefix.empty() || limit == 0) return result;
-    auto it = std::lower_bound(tokens_by_reading_.begin(), tokens_by_reading_.end(), reading_prefix,
-                               [this](std::uint32_t id, const std::string &prefix) {
-                                   return tokens_[id].reading < prefix;
-                               });
-    for (; it != tokens_by_reading_.end(); ++it)
+    if (!ready_ || reading_prefix.empty() || limit == 0) return {};
+    const auto cached = short_prefix_index_.find(reading_prefix);
+    if (cached != short_prefix_index_.end() && limit <= kShortPrefixCandidateCount)
+        return MakeLemmas(cached->second, limit);
+
+    std::vector<std::uint32_t> matches;
+    for (size_t index = LowerBoundReading(reading_prefix); index < tokens_.size(); ++index)
     {
-        const Token &token = tokens_[*it];
-        if (token.reading.size() < reading_prefix.size() ||
-            token.reading.compare(0, reading_prefix.size(), reading_prefix) != 0)
+        const auto token_reading = Reading(tokens_[index]);
+        if (token_reading.size() < reading_prefix.size() ||
+            token_reading.compare(0, reading_prefix.size(), reading_prefix) != 0)
             break;
-        result.push_back(MakeLemma(*it));
+        matches.push_back(static_cast<std::uint32_t>(index));
     }
-    std::sort(result.begin(), result.end(),
-              [](const JapaneseLemma &a, const JapaneseLemma &b) { return a.word_cost < b.word_cost; });
-    if (result.size() > limit) result.resize(limit);
-    return result;
+    return BestLemmas(matches, limit);
 }
 
 std::vector<JapaneseLemma> JapaneseSentenceDecoder::PrefixLemmasContinuing(
     const std::string &reading_prefix, const std::vector<std::string> &next_kana, size_t limit) const
 {
-    std::vector<JapaneseLemma> result;
-    if (!ready_ || reading_prefix.empty() || next_kana.empty() || limit == 0) return result;
-    auto it = std::lower_bound(tokens_by_reading_.begin(), tokens_by_reading_.end(), reading_prefix,
-                               [this](std::uint32_t id, const std::string &prefix) {
-                                   return tokens_[id].reading < prefix;
-                               });
-    for (; it != tokens_by_reading_.end(); ++it)
+    if (!ready_ || reading_prefix.empty() || next_kana.empty() || limit == 0) return {};
+    std::vector<std::uint32_t> matches;
+    for (size_t index = LowerBoundReading(reading_prefix); index < tokens_.size(); ++index)
     {
-        const Token &token = tokens_[*it];
-        if (token.reading.size() <= reading_prefix.size() ||
-            token.reading.compare(0, reading_prefix.size(), reading_prefix) != 0)
+        const auto token_reading = Reading(tokens_[index]);
+        if (token_reading.size() <= reading_prefix.size() ||
+            token_reading.compare(0, reading_prefix.size(), reading_prefix) != 0)
             break;
-        const std::string_view remaining(token.reading.data() + reading_prefix.size(),
-                                         token.reading.size() - reading_prefix.size());
+        const std::string_view remaining(token_reading.data() + reading_prefix.size(),
+                                         token_reading.size() - reading_prefix.size());
         bool matched = false;
         for (const auto &kana : next_kana)
         {
@@ -203,48 +294,9 @@ std::vector<JapaneseLemma> JapaneseSentenceDecoder::PrefixLemmasContinuing(
                 break;
             }
         }
-        if (matched) result.push_back(MakeLemma(*it));
+        if (matched) matches.push_back(static_cast<std::uint32_t>(index));
     }
-    std::sort(result.begin(), result.end(),
-              [](const JapaneseLemma &a, const JapaneseLemma &b) { return a.word_cost < b.word_cost; });
-    if (result.size() > limit) result.resize(limit);
-    return result;
-}
-
-std::vector<SentenceCandidate> JapaneseSentenceDecoder::Predict(const std::string &history_surface,
-                                                                size_t limit) const
-{
-    std::vector<SentenceCandidate> result;
-    if (!ready_ || history_surface.empty() || limit == 0) return result;
-    const auto bounds = Utf8Boundaries(history_surface);
-    if (bounds.size() < 2) return result;
-
-    std::unordered_set<std::string> seen;
-    const size_t char_count = bounds.size() - 1;
-    const size_t max_hist = (std::min)(char_count, size_t{7});
-    for (size_t hist_len = max_hist; hist_len > 0 && result.size() < limit; --hist_len)
-    {
-        const size_t start = bounds[char_count - hist_len];
-        const std::string prefix = history_surface.substr(start);
-        auto it = std::lower_bound(tokens_by_surface_.begin(), tokens_by_surface_.end(), prefix,
-                                   [this](std::uint32_t id, const std::string &value) {
-                                       return tokens_[id].surface < value;
-                                   });
-        for (; it != tokens_by_surface_.end() && result.size() < limit; ++it)
-        {
-            const Token &token = tokens_[*it];
-            if (token.surface.size() <= prefix.size() ||
-                token.surface.compare(0, prefix.size(), prefix) != 0)
-                break;
-            std::string rest = token.surface.substr(prefix.size());
-            if (seen.insert(rest).second)
-                result.push_back({std::move(rest), token.word_cost});
-        }
-    }
-    std::sort(result.begin(), result.end(),
-              [](const SentenceCandidate &a, const SentenceCandidate &b) { return a.cost < b.cost; });
-    if (result.size() > limit) result.resize(limit);
-    return result;
+    return BestLemmas(matches, limit);
 }
 
 std::vector<SentenceCandidate> JapaneseSentenceDecoder::Decode(const std::string &reading, size_t limit) const
@@ -264,17 +316,15 @@ std::vector<SentenceCandidate> JapaneseSentenceDecoder::Decode(const std::string
         {
             const size_t end = boundaries[end_index];
             const std::string key = reading.substr(start, end - start);
-            const auto found = reading_index_.find(key);
-            if (found == reading_index_.end()) continue;
-            for (const std::uint32_t token_index : found->second)
+            const auto lemmas = ExactLemmas(key, 24);
+            for (const auto &lemma : lemmas)
             {
-                const Token &token = tokens_[token_index];
                 for (const auto &previous : paths[start])
                 {
-                    paths[end].push_back({previous.text + token.surface,
-                                          previous.cost + token.word_cost +
-                                              ConnectionCost(previous.right_id, token.left_id),
-                                          token.right_id});
+                    paths[end].push_back({previous.text + lemma.surface,
+                                          previous.cost + lemma.word_cost +
+                                              ConnectionCost(previous.right_id, lemma.left_id),
+                                          lemma.right_id});
                 }
             }
         }

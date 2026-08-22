@@ -32,5 +32,5 @@ class JapaneseCandidateProvider : public ICandidateProvider
     std::string db_path_;
     sqlite3 *db_ = nullptr;
     sqlite3_stmt *query_statement_ = nullptr;
-    std::unique_ptr<japanese::JapaneseSentenceDecoder> sentence_decoder_;
+    std::shared_ptr<const japanese::JapaneseSentenceDecoder> sentence_decoder_;
 };

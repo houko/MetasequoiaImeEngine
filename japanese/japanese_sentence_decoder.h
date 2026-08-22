@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -36,7 +37,6 @@ class JapaneseSentenceDecoder
     std::vector<JapaneseLemma> PrefixLemmasContinuing(const std::string &reading_prefix,
                                                       const std::vector<std::string> &next_kana,
                                                       size_t limit = 32) const;
-    std::vector<SentenceCandidate> Predict(const std::string &history_surface, size_t limit = 8) const;
     int ConnectionCost(std::uint16_t right_id, std::uint16_t left_id) const;
 
   private:
@@ -44,8 +44,10 @@ class JapaneseSentenceDecoder
 
     struct Token
     {
-        std::string reading;
-        std::string surface;
+        std::uint32_t reading_offset = 0;
+        std::uint32_t surface_offset = 0;
+        std::uint16_t reading_length = 0;
+        std::uint16_t surface_length = 0;
         std::uint16_t left_id = 0;
         std::uint16_t right_id = 0;
         std::int32_t word_cost = 0;
@@ -53,13 +55,23 @@ class JapaneseSentenceDecoder
 
     bool Load(const std::string &path);
     JapaneseLemma MakeLemma(std::uint32_t token_id) const;
+    std::string_view Reading(const Token &token) const;
+    std::string_view Surface(const Token &token) const;
+    size_t LowerBoundReading(std::string_view reading) const;
+    bool TokenCheaper(std::uint32_t a, std::uint32_t b) const;
+    void KeepBestToken(std::vector<std::uint32_t> &best, std::uint32_t token_id,
+                       size_t limit) const;
+    void SortTokenIds(std::vector<std::uint32_t> &token_ids) const;
+    std::vector<JapaneseLemma> MakeLemmas(const std::vector<std::uint32_t> &token_ids,
+                                          size_t limit) const;
+    std::vector<JapaneseLemma> BestLemmas(const std::vector<std::uint32_t> &token_ids,
+                                         size_t limit) const;
 
     bool ready_ = false;
     std::uint32_t connection_size_ = 0;
     std::vector<Token> tokens_;
     std::vector<std::int16_t> connection_costs_;
-    std::unordered_map<std::string, std::vector<std::uint32_t>> reading_index_;
-    std::vector<std::uint32_t> tokens_by_reading_;
-    std::vector<std::uint32_t> tokens_by_surface_;
+    std::string strings_;
+    std::unordered_map<std::string, std::vector<std::uint32_t>> short_prefix_index_;
 };
 } // namespace japanese
