@@ -8,31 +8,105 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include "shuangpin_utils.h"
 #include "../quanpin/quanpin_utils.h"
+#include <windows.h>
+#include <shlobj.h>
 
 using namespace std;
 
 const string ShuangpinUtil::app_name = "metasequoiaime";
 static string path_seperator = "\\";
 
-/**
- * @brief Get the local app data path from environment variable LOCALAPPDATA
- *
- * @return string The path of local app data directory
- */
-string ShuangpinUtil::get_local_appdata_path()
+namespace
 {
-    char *localAppDataDir = nullptr;
-    std::string localAppDataDirStr;
-
-    errno_t err = _dupenv_s(&localAppDataDir, nullptr, "LOCALAPPDATA");
-    if (err == 0 && localAppDataDir != nullptr)
+bool PathHasEmptyComponent(const std::wstring &path)
+{
+    if (path.empty())
     {
-        localAppDataDirStr = std::string(localAppDataDir);
+        return true;
+    }
+    size_t index = 0;
+    if (path.size() >= 2 && path[0] == L'\\' && path[1] == L'\\')
+    {
+        index = 2;
+    }
+    else if (path[0] == L'\\')
+    {
+        return true;
+    }
+    for (; index + 1 < path.size(); ++index)
+    {
+        if (path[index] == L'\\' && path[index + 1] == L'\\')
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsUsableAbsolutePath(const std::wstring &path)
+{
+    if (PathHasEmptyComponent(path))
+    {
+        return false;
+    }
+    if (path.size() >= 2 && path[1] == L':')
+    {
+        return true;
+    }
+    return path.size() >= 2 && path[0] == L'\\' && path[1] == L'\\';
+}
+
+std::wstring QueryLocalAppDataW()
+{
+    const DWORD needed = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+    if (needed != 0)
+    {
+        std::wstring value(needed, L'\0');
+        const DWORD written = GetEnvironmentVariableW(L"LOCALAPPDATA", value.data(), needed);
+        if (written != 0 && written < needed)
+        {
+            value.resize(written);
+            if (IsUsableAbsolutePath(value))
+            {
+                return value;
+            }
+        }
     }
 
-    std::unique_ptr<char, decltype(&free)> dirPtr(localAppDataDir, free);
+    PWSTR known_path = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &known_path)) &&
+        known_path)
+    {
+        std::wstring result(known_path);
+        CoTaskMemFree(known_path);
+        if (IsUsableAbsolutePath(result))
+        {
+            return result;
+        }
+    }
+    return {};
+}
 
-    return localAppDataDirStr.empty() ? "" : localAppDataDirStr;
+std::string WideToUtf8(const std::wstring &wide)
+{
+    if (wide.empty())
+    {
+        return {};
+    }
+    const int size = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 1)
+    {
+        return {};
+    }
+    std::string utf8(static_cast<size_t>(size - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, utf8.data(), size, nullptr, nullptr);
+    return utf8;
+}
+} // namespace
+
+string ShuangpinUtil::get_local_appdata_path()
+{
+    return WideToUtf8(QueryLocalAppDataW());
 }
 
 // LocalAppData path

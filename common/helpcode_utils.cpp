@@ -1,4 +1,5 @@
 #include "helpcode_utils.h"
+#include "../shuangpin/shuangpin_utils.h"
 
 #include <utf8.h>
 #include <algorithm>
@@ -15,17 +16,7 @@ namespace
 {
 std::string get_local_appdata_path()
 {
-    char *localAppDataDir = nullptr;
-    std::string localAppDataDirStr;
-
-    errno_t err = _dupenv_s(&localAppDataDir, nullptr, "LOCALAPPDATA");
-    if (err == 0 && localAppDataDir != nullptr)
-    {
-        localAppDataDirStr = std::string(localAppDataDir);
-    }
-
-    std::unique_ptr<char, decltype(&free)> dirPtr(localAppDataDir, free);
-    return localAppDataDirStr.empty() ? "" : localAppDataDirStr;
+    return ShuangpinUtil::get_local_appdata_path();
 }
 
 const std::string kAppName = "metasequoiaime";
