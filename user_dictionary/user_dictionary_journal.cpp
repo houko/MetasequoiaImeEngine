@@ -1,6 +1,7 @@
 #include "user_dictionary_journal.h"
 
 #include <sqlite3.h>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -522,6 +523,40 @@ bool delete_english_candidate(const std::string &english_db_path, const std::str
     const bool ok = remove && bind_text(remove.get(),1,entry_key) && bind_text(remove.get(),2,value) &&
         sqlite3_step(remove.get()) == SQLITE_DONE && sqlite3_changes(database.get()) > 0;
     return ok && record_delete(user_db_path, DictionaryKind::English, entry_key, value);
+}
+
+bool learn_entered_english_word(const std::string &english_db_path, const std::string &user_db_path,
+                                const std::string &display, std::int64_t weight)
+{
+    constexpr size_t kMaximumLearnedEnglishWordLength = 64;
+    if (display.empty() || display.size() > kMaximumLearnedEnglishWordLength ||
+        !std::all_of(display.begin(), display.end(), [](unsigned char ch) {
+            return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        }))
+        return false;
+
+    std::string word = display;
+    std::transform(word.begin(), word.end(), word.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    weight = (std::max)(std::int64_t{0}, weight);
+    if (!EnglishDictionary::ensure_schema(english_db_path)) return false;
+
+    auto database = open_database(english_db_path, SQLITE_OPEN_READWRITE);
+    auto insert = database ? prepare(database.get(),
+        "INSERT OR IGNORE INTO english_words(word,display,weight) VALUES(?1,?2,?3)") : Stmt{};
+    if (!insert || !bind_text(insert.get(), 1, word) || !bind_text(insert.get(), 2, display) ||
+        sqlite3_bind_int64(insert.get(), 3, weight) != SQLITE_OK || sqlite3_step(insert.get()) != SQLITE_DONE)
+        return false;
+    if (sqlite3_changes(database.get()) == 0) return true;
+
+    if (record_user_insert(user_db_path, DictionaryKind::English, word, display, weight, display)) return true;
+
+    // Do not leave an entry that cannot survive a dictionary upgrade.
+    auto rollback_insert = prepare(database.get(), "DELETE FROM english_words WHERE word=?1 AND display=?2");
+    if (rollback_insert && bind_text(rollback_insert.get(), 1, word) &&
+        bind_text(rollback_insert.get(), 2, display))
+        (void)sqlite3_step(rollback_insert.get());
+    return false;
 }
 
 bool clear_fixed_position(const std::string &user_db_path, const std::string &context_key,

@@ -54,6 +54,8 @@ bool adjust_english_candidate_ranking(const std::string &english_db_path, const 
                                       bool force_top, bool *ranking_changed = nullptr);
 bool delete_english_candidate(const std::string &english_db_path, const std::string &user_db_path,
                               const std::string &entry_key, const std::string &value);
+bool learn_entered_english_word(const std::string &english_db_path, const std::string &user_db_path,
+                                const std::string &display, std::int64_t weight = 10);
 bool set_fixed_position(const std::string &user_db_path, const std::string &context_key,
                         const std::string &entry_key, const std::string &value, int position);
 bool clear_fixed_position(const std::string &user_db_path, const std::string &context_key,
