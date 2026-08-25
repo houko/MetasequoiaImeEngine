@@ -79,5 +79,8 @@ std::vector<KeyedQueryItem> query_segments_keyed_flat(
     std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
     int limit = 8,
     QuerySource source = QuerySource::Quanpin);
+std::vector<KeyedQueryItem> query_exact_segmentations_keyed_flat(
+    const std::vector<Segments> &segmentations, sqlite3 *db,
+    std::unordered_map<std::string, sqlite3_stmt *> &statement_cache, int limit = 128);
 
 } // namespace quanpin

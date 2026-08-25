@@ -4,6 +4,7 @@
 #include "../shuangpin/shuangpin_utils.h"
 #include <algorithm>
 #include <climits>
+#include <map>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
@@ -475,6 +476,67 @@ std::vector<KeyedQueryItem> run_keyed_query(sqlite3 *db,
     sqlite3_bind_text(stmt, 1, lower_bound.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, upper_bound.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 3, limit);
+
+    std::vector<KeyedQueryItem> rows;
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const unsigned char *key = sqlite3_column_text(stmt, 0);
+        const unsigned char *value_text = sqlite3_column_text(stmt, 1);
+        rows.push_back(KeyedQueryItem{
+            key == nullptr ? "" : reinterpret_cast<const char *>(key),
+            value_text == nullptr ? "" : reinterpret_cast<const char *>(value_text),
+            sqlite3_column_int64(stmt, 2),
+        });
+    }
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return rows;
+}
+
+std::vector<KeyedQueryItem> run_keyed_batch_query(sqlite3 *db,
+                                                  std::unordered_map<std::string, sqlite3_stmt *> &statement_cache,
+                                                  const std::string &table, const std::vector<std::string> &keys,
+                                                  int limit)
+{
+    if (db == nullptr || table.empty() || keys.empty() || limit <= 0)
+    {
+        return {};
+    }
+
+    std::string placeholders;
+    for (size_t index = 0; index < keys.size(); ++index)
+    {
+        if (index > 0)
+        {
+            placeholders += ',';
+        }
+        placeholders += '?';
+    }
+    const std::string sql = "SELECT \"key\", \"value\", \"weight\" FROM \"" + table + "\" WHERE \"key\" IN (" +
+                            placeholders + ") ORDER BY \"weight\" DESC LIMIT ?";
+
+    sqlite3_stmt *stmt = nullptr;
+    const auto found = statement_cache.find(sql);
+    if (found != statement_cache.end())
+    {
+        stmt = found->second;
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    else
+    {
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        {
+            return {};
+        }
+        statement_cache.emplace(sql, stmt);
+    }
+
+    for (size_t index = 0; index < keys.size(); ++index)
+    {
+        sqlite3_bind_text(stmt, static_cast<int>(index + 1), keys[index].c_str(), -1, SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_int(stmt, static_cast<int>(keys.size() + 1), limit);
 
     std::vector<KeyedQueryItem> rows;
     while (sqlite3_step(stmt) == SQLITE_ROW)
@@ -1012,6 +1074,43 @@ std::vector<KeyedQueryItem> query_segments_keyed_flat(
         items.resize(static_cast<size_t>(limit));
     }
     return items;
+}
+
+std::vector<KeyedQueryItem> query_exact_segmentations_keyed_flat(
+    const std::vector<Segments> &segmentations, sqlite3 *db,
+    std::unordered_map<std::string, sqlite3_stmt *> &statement_cache, int limit)
+{
+    if (db == nullptr || segmentations.empty() || limit <= 0)
+    {
+        return {};
+    }
+
+    std::map<std::string, std::vector<std::string>> keys_by_table;
+    std::unordered_set<std::string> seen;
+    for (const auto &segments : segmentations)
+    {
+        if (!has_only_complete_pinyin_segments(segments))
+        {
+            continue;
+        }
+        const std::string table = build_table_name_impl(segments);
+        const std::string key = join_segments(segments);
+        if (table.empty() || key.empty() || !seen.insert(table + '\n' + key).second)
+        {
+            continue;
+        }
+        keys_by_table[table].push_back(key);
+    }
+
+    std::vector<KeyedQueryItem> result;
+    for (const auto &[table, keys] : keys_by_table)
+    {
+        auto rows = run_keyed_batch_query(db, statement_cache, table, keys, limit);
+        result.insert(result.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
+    }
+    std::stable_sort(result.begin(), result.end(),
+                     [](const KeyedQueryItem &lhs, const KeyedQueryItem &rhs) { return lhs.weight > rhs.weight; });
+    return result;
 }
 
 } // namespace quanpin

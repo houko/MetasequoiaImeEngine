@@ -1,6 +1,7 @@
 #include "quanpin_utils.h"
 
 #include "../common/helpcode_utils.h"
+#include <algorithm>
 
 namespace quanpin
 {
@@ -129,6 +130,100 @@ const std::unordered_set<std::string> &prefix_pinyin_set()
         return result;
     }();
     return kSet;
+}
+
+bool has_only_complete_pinyin_segments(const Segments &segments)
+{
+    if (segments.empty())
+    {
+        return false;
+    }
+
+    const auto &valid_pinyin = intact_pinyin_set();
+    return std::all_of(segments.begin(), segments.end(),
+                       [&](const std::string &segment) { return valid_pinyin.find(segment) != valid_pinyin.end(); });
+}
+
+SyllableGraph build_syllable_graph(const std::string &pinyin)
+{
+    SyllableGraph graph;
+    graph.input_length = pinyin.size();
+    graph.edges.resize(pinyin.size() + 1);
+    if (pinyin.empty() || pinyin.find('\'') != std::string::npos)
+    {
+        return graph;
+    }
+
+    const auto &valid_pinyin = intact_pinyin_set();
+    static const size_t kMaxSyllableLength =
+        std::max_element(intact_pinyin_list().begin(), intact_pinyin_list().end(),
+                         [](const std::string &lhs, const std::string &rhs) { return lhs.size() < rhs.size(); })
+            ->size();
+
+    for (size_t start = 0; start < pinyin.size(); ++start)
+    {
+        const size_t last_end = std::min(pinyin.size(), start + kMaxSyllableLength);
+        for (size_t end = last_end; end > start; --end)
+        {
+            const std::string syllable = pinyin.substr(start, end - start);
+            if (valid_pinyin.find(syllable) != valid_pinyin.end())
+            {
+                graph.edges[start].push_back(SyllableEdge{end, syllable});
+            }
+        }
+    }
+
+    std::vector<bool> reaches_end(pinyin.size() + 1, false);
+    reaches_end[pinyin.size()] = true;
+    for (size_t start = pinyin.size(); start-- > 0;)
+    {
+        auto &edges = graph.edges[start];
+        edges.erase(std::remove_if(
+                        edges.begin(), edges.end(),
+                        [&](const SyllableEdge &edge) { return edge.end > pinyin.size() || !reaches_end[edge.end]; }),
+                    edges.end());
+        reaches_end[start] = !edges.empty();
+    }
+    return graph;
+}
+
+std::vector<Segments> enumerate_complete_segmentations(const SyllableGraph &graph, size_t path_limit)
+{
+    std::vector<Segments> result;
+    if (path_limit == 0 || graph.input_length == 0 || graph.edges.size() != graph.input_length + 1)
+    {
+        return result;
+    }
+
+    Segments current;
+    const auto enumerate = [&](auto &&self, size_t position) -> void {
+        if (result.size() >= path_limit)
+        {
+            return;
+        }
+        if (position == graph.input_length)
+        {
+            result.push_back(current);
+            return;
+        }
+        if (position >= graph.edges.size())
+        {
+            return;
+        }
+
+        for (const auto &edge : graph.edges[position])
+        {
+            current.push_back(edge.syllable);
+            self(self, edge.end);
+            current.pop_back();
+            if (result.size() >= path_limit)
+            {
+                return;
+            }
+        }
+    };
+    enumerate(enumerate, 0);
+    return result;
 }
 
 std::vector<std::string> cut_one_piece_greedy(const std::string &pinyin, bool intact_only)
