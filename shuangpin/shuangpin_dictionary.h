@@ -69,7 +69,9 @@ class ShuangpinDictionary
     const ShuangpinProfile &profile_;
     std::string quanpin_db_path_;
     sqlite3 *quanpin_db_ = nullptr;
+    sqlite3_int64 data_version_ = -1;
     std::unordered_map<std::string, sqlite3_stmt *> quanpin_statement_cache_;
+    void reset_cache_if_database_changed();
 
     void generate_for_single_char(std::vector<WordItem> &candidate_list, std::string code);
     void filter_with_single_helpcode(                //

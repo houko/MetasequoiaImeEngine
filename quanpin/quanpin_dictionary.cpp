@@ -48,8 +48,9 @@ std::string escape_sql_text(std::string text)
 
 } // namespace
 
-QuanpinDictionary::QuanpinDictionary()
-    : cache_(128), series_cache_(128), segmentation_cache_(128), db_path_(quanpin::get_default_db_path())
+QuanpinDictionary::QuanpinDictionary(std::string db_path)
+    : cache_(128), series_cache_(128), segmentation_cache_(128),
+      db_path_(db_path.empty() ? quanpin::get_default_db_path() : std::move(db_path))
 {
     ime_pinyin::im_set_max_lens(128, 64);
     decoder_ready_ = ime_pinyin::im_open_decoder(
@@ -68,6 +69,7 @@ QuanpinDictionary::QuanpinDictionary()
     }
 
     quanpin::warm_up(db_, statement_cache_);
+    reset_cache_if_database_changed();
 }
 
 QuanpinDictionary::~QuanpinDictionary()
@@ -101,8 +103,12 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
     const std::string cache_key = pinyin_segmentation_;
     if (auto cached = series_cache_.get(cache_key))
     {
-        current_candidate_list_ = cached.value();
-        return current_candidate_list_;
+        reset_cache_if_database_changed();
+        if (cached = series_cache_.get(cache_key))
+        {
+            current_candidate_list_ = cached.value();
+            return current_candidate_list_;
+        }
     }
 
     std::vector<WordItem> result = query_series(raw_input, pinyin_segmentation_, segments);
@@ -586,6 +592,31 @@ void QuanpinDictionary::reset_cache()
     cache_.clear();
     series_cache_.clear();
     segmentation_cache_.clear();
+}
+
+void QuanpinDictionary::reset_cache_if_database_changed()
+{
+    if (db_ == nullptr)
+    {
+        return;
+    }
+    sqlite3_stmt *statement = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA data_version", -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return;
+    }
+    if (sqlite3_step(statement) != SQLITE_ROW)
+    {
+        sqlite3_finalize(statement);
+        return;
+    }
+    const sqlite3_int64 current_version = sqlite3_column_int64(statement, 0);
+    sqlite3_finalize(statement);
+    if (data_version_ >= 0 && current_version != data_version_)
+    {
+        reset_cache();
+    }
+    data_version_ = current_version;
 }
 
 std::vector<std::string> QuanpinDictionary::select_data(const std::string &sql_str)

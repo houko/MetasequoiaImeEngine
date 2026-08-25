@@ -71,6 +71,7 @@ ShuangpinDictionary::ShuangpinDictionary(const ShuangpinProfile &profile)
     else
     {
         quanpin::warm_up(quanpin_db_, quanpin_statement_cache_);
+        reset_cache_if_database_changed();
     }
 }
 
@@ -104,8 +105,11 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate( //
         // Check cache first
         if (_cached_buffer.get(effective_cache_key))
         {
-            candidate_list = _cached_buffer.get(effective_cache_key).value();
-            return candidate_list;
+            reset_cache_if_database_changed();
+            if (const auto cached = _cached_buffer.get(effective_cache_key))
+            {
+                return cached.value();
+            }
         }
 
         candidate_list = query_from_quanpin_database(pinyin_sequence, pinyin_segmentation);
@@ -143,8 +147,11 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generateSeries( //
         // 先看一下缓存里有没有
         if (_cached_buffer_series.get(effective_cache_key))
         {
-            candidate_list = _cached_buffer_series.get(effective_cache_key).value();
-            return candidate_list;
+            reset_cache_if_database_changed();
+            if (const auto cached = _cached_buffer_series.get(effective_cache_key))
+            {
+                return cached.value();
+            }
         }
 
         // 查询当前的拼音严格对应的数据
@@ -323,15 +330,22 @@ vector<ShuangpinDictionary::WordItem> ShuangpinDictionary::generate_with_helpcod
             reversed_single_helpcode ? _cached_buffer_sgl_reversed : _cached_buffer_sgl;
         if (const auto cached = single_helpcode_cache.get(pinyin_sequence))
         {
-            return cached.value();
+            reset_cache_if_database_changed();
+            if (const auto refreshed = single_helpcode_cache.get(pinyin_sequence))
+            {
+                return refreshed.value();
+            }
         }
     }
     else if (help_codes.size() == 2)
     {
         if (_cached_buffer_dbl.get(pinyin_sequence))
         {
-            candidate_list = _cached_buffer_dbl.get(pinyin_sequence).value();
-            return candidate_list;
+            reset_cache_if_database_changed();
+            if (const auto cached = _cached_buffer_dbl.get(pinyin_sequence))
+            {
+                return cached.value();
+            }
         }
     }
 
@@ -1080,6 +1094,31 @@ void ShuangpinDictionary::reset_cache()
     _cached_buffer_sgl_reversed.clear();
     _cached_buffer_dbl.clear();
     _cached_buffer_series.clear();
+}
+
+void ShuangpinDictionary::reset_cache_if_database_changed()
+{
+    if (quanpin_db_ == nullptr)
+    {
+        return;
+    }
+    sqlite3_stmt *statement = nullptr;
+    if (sqlite3_prepare_v2(quanpin_db_, "PRAGMA data_version", -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return;
+    }
+    if (sqlite3_step(statement) != SQLITE_ROW)
+    {
+        sqlite3_finalize(statement);
+        return;
+    }
+    const sqlite3_int64 current_version = sqlite3_column_int64(statement, 0);
+    sqlite3_finalize(statement);
+    if (data_version_ >= 0 && current_version != data_version_)
+    {
+        reset_cache();
+    }
+    data_version_ = current_version;
 }
 
 int ShuangpinDictionary::insert_word_to_cached_buffer_series(const std::string &pinyin, const std::string &word,

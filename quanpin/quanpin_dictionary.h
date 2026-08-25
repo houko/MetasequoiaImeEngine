@@ -16,7 +16,7 @@ class QuanpinDictionary
     static const int OK = 0;
     static const int ERROR_CODE = -1;
 
-    QuanpinDictionary();
+    explicit QuanpinDictionary(std::string db_path = {});
     ~QuanpinDictionary();
 
     std::vector<WordItem> query(const std::string &raw_input, const std::string &segmentation = "");
@@ -82,12 +82,14 @@ class QuanpinDictionary
     std::string build_sql_for_updating_word(std::string pinyin, const std::string &word);
     std::string build_sql_for_deleting_word(std::string pinyin, const std::string &word);
     bool do_validate(const std::string &key, const std::string &jp, const std::string &value);
+    void reset_cache_if_database_changed();
 
   private:
     CircularBuffer<std::string, std::vector<WordItem>> cache_;
     CircularBuffer<std::string, std::vector<WordItem>> series_cache_;
     CircularBuffer<std::string, quanpin::Segments> segmentation_cache_;
     sqlite3 *db_ = nullptr;
+    sqlite3_int64 data_version_ = -1;
     std::unordered_map<std::string, sqlite3_stmt *> statement_cache_;
     std::string db_path_;
     bool decoder_ready_ = false;
