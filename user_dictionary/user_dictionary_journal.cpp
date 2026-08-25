@@ -287,16 +287,11 @@ bool apply_english(sqlite3 *db, const std::string &key, const std::string &value
         return stmt && bind_text(stmt.get(), 1, key) && bind_text(stmt.get(), 2, effective_display) &&
                sqlite3_step(stmt.get()) == SQLITE_DONE;
     }
-    auto update = prepare(db, "UPDATE english_words SET weight=?1 WHERE word=?2 AND display=?3");
-    if (!update || sqlite3_bind_int64(update.get(), 1, weight) != SQLITE_OK || !bind_text(update.get(), 2, key) ||
-        !bind_text(update.get(), 3, effective_display) ||
-        sqlite3_step(update.get()) != SQLITE_DONE)
-        return false;
-    if (sqlite3_changes(db) > 0) return true;
-    auto insert = prepare(db, "INSERT INTO english_words(word,display,weight) VALUES(?1,?2,?3)");
-    return insert && bind_text(insert.get(), 1, key) && bind_text(insert.get(), 2, effective_display) &&
-           sqlite3_bind_int64(insert.get(), 3, weight) == SQLITE_OK &&
-           sqlite3_step(insert.get()) == SQLITE_DONE;
+    auto upsert = prepare(db, "INSERT INTO english_words(word,display,weight) VALUES(?1,?2,?3) "
+                              "ON CONFLICT(word,display) DO UPDATE SET weight=excluded.weight");
+    return upsert && bind_text(upsert.get(), 1, key) && bind_text(upsert.get(), 2, effective_display) &&
+           sqlite3_bind_int64(upsert.get(), 3, weight) == SQLITE_OK &&
+           sqlite3_step(upsert.get()) == SQLITE_DONE;
 }
 } // namespace
 
