@@ -209,6 +209,26 @@ bool update_pinyin_weight(sqlite3 *main_db, sqlite3_stmt *journal_upsert, const 
            write_upsert_journal(journal_upsert, DictionaryKind::Pinyin, key, value, weight);
 }
 
+bool update_wubi_weight(sqlite3 *main_db, sqlite3_stmt *journal_upsert, const std::string &key,
+                        const std::string &value, std::int64_t weight)
+{
+    weight = clamp_managed_weight(weight);
+    if (main_db == nullptr || journal_upsert == nullptr || key.empty() || value.empty()) return false;
+    auto stmt = prepare(main_db, "UPDATE wubi86 SET weight=?1 WHERE key=?2 AND value=?3");
+    return stmt && sqlite3_bind_int64(stmt.get(), 1, weight) == SQLITE_OK && bind_text(stmt.get(), 2, key) &&
+           bind_text(stmt.get(), 3, value) && sqlite3_step(stmt.get()) == SQLITE_DONE &&
+           sqlite3_changes(main_db) > 0 &&
+           write_upsert_journal(journal_upsert, DictionaryKind::Wubi, key, value, weight);
+}
+
+bool update_ranked_weight(sqlite3 *main_db, sqlite3_stmt *journal_upsert, DictionaryKind kind,
+                          const std::string &key, const std::string &value, std::int64_t weight)
+{
+    if (kind == DictionaryKind::Wubi)
+        return update_wubi_weight(main_db, journal_upsert, key, value, weight);
+    return update_pinyin_weight(main_db, journal_upsert, key, value, weight);
+}
+
 size_t ranking_target(size_t rank, const std::string &mode, int linear_step, bool force_top)
 {
     if (force_top) return 0;
@@ -644,7 +664,7 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
                               const std::string &context_key, const std::vector<WordItem> &ordered_candidates,
                               const std::string &entry_key, const std::string &value,
                               const std::string &mode, int linear_step, int trigger_count, bool force_top,
-                              bool *ranking_changed)
+                              bool *ranking_changed, DictionaryKind kind)
 {
     if (ranking_changed) *ranking_changed = false;
     if (entry_key.empty() || value.empty() || ordered_candidates.empty() ||
@@ -673,7 +693,9 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
     {
         if (item.source != CandidateSource::Database && item.source != CandidateSource::UserDatabase)
             continue;
-        if (candidate_dictionary_key(item, context_key) != entry_key) continue;
+        const std::string item_key =
+            kind == DictionaryKind::Wubi ? item.pinyin : candidate_dictionary_key(item, context_key);
+        if (item_key != entry_key) continue;
         database_candidates.push_back(item);
     }
     const auto selected = std::find_if(database_candidates.begin(), database_candidates.end(), [&](const WordItem &item) {
@@ -778,7 +800,7 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         {
             const std::int64_t weight = clamp_managed_weight(
                 base - static_cast<std::int64_t>(i) * kRebalanceGap);
-            rebalance_ok = update_pinyin_weight(main_db.get(), journal_upsert.get(), entry_key,
+            rebalance_ok = update_ranked_weight(main_db.get(), journal_upsert.get(), kind, entry_key,
                                                 database_candidates[i].word, weight);
         }
         sqlite3_exec(main_db.get(), rebalance_ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
@@ -789,7 +811,7 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
             : base - static_cast<std::int64_t>(target) * kRebalanceGap + kRebalanceGap / 2;
     }
     new_weight = clamp_managed_weight(new_weight);
-    const bool ok = update_pinyin_weight(main_db.get(), journal_upsert.get(), entry_key, value, new_weight);
+    const bool ok = update_ranked_weight(main_db.get(), journal_upsert.get(), kind, entry_key, value, new_weight);
     if (ok)
     {
         if (ranking_changed) *ranking_changed = true;

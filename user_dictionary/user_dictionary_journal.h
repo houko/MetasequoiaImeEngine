@@ -45,7 +45,7 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
                               const std::string &context_key, const std::vector<WordItem> &ordered_candidates,
                               const std::string &entry_key, const std::string &value,
                               const std::string &mode, int linear_step, int trigger_count, bool force_top,
-                              bool *ranking_changed = nullptr);
+                              bool *ranking_changed = nullptr, DictionaryKind kind = DictionaryKind::Pinyin);
 bool adjust_english_candidate_ranking(const std::string &english_db_path, const std::string &user_db_path,
                                       const std::string &context_key,
                                       const std::vector<WordItem> &ordered_candidates,
