@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <sqlite3.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class EnglishDictionary
@@ -26,6 +27,7 @@ class EnglishDictionary
   private:
     bool ensure_query_statement();
     bool ensure_gloss_statements();
+    void load_custom_translations();
     void close_database();
 
   private:
@@ -34,4 +36,6 @@ class EnglishDictionary
     sqlite3_stmt *query_statement_ = nullptr;
     sqlite3_stmt *en_zh_statement_ = nullptr;
     sqlite3_stmt *zh_en_statement_ = nullptr;
+    std::unordered_map<std::string, std::string> custom_en_zh_;
+    std::unordered_map<std::string, std::string> custom_zh_en_;
 };
