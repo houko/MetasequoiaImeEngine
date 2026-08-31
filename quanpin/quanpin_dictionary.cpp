@@ -165,8 +165,8 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
         result = query_series(raw_input, pinyin_segmentation_, segments);
         if (!alternative_segmentations.empty())
         {
-            result = merge_alternative_segmentations(raw_input, pinyin_segmentation_, segments, alternative_segmentations,
-                                                     std::move(result));
+            result = merge_alternative_segmentations(raw_input, pinyin_segmentation_, segments,
+                                                     alternative_segmentations, std::move(result));
         }
     }
     series_cache_.insert(cache_key, result);
