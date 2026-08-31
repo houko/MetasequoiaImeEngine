@@ -30,7 +30,8 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
         const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
         const std::string base_segmentation = quanpin::join_segments(cuts.front());
         const std::string help_codes = request.raw_input.substr(request.raw_input.size() - 2, 2);
-        const auto base_candidates = dictionary_.query(base_raw_input, base_segmentation);
+        const auto base_candidates =
+            dictionary_.query(base_raw_input, base_segmentation, request.enable_quanpin_autocorrect);
         return HelpcodeUtils::filter_candidates_with_double_helpcodes(base_candidates, help_codes);
     }
 
@@ -40,11 +41,12 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
         const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
         const std::string base_segmentation = quanpin::join_segments(cuts.front());
         const std::string help_code = request.raw_input.substr(request.raw_input.size() - 1, 1);
-        const auto base_candidates = dictionary_.query(base_raw_input, base_segmentation);
+        const auto base_candidates =
+            dictionary_.query(base_raw_input, base_segmentation, request.enable_quanpin_autocorrect);
         return HelpcodeUtils::reorder_candidates_with_single_helpcode(base_candidates, help_code);
     }
 
-    return dictionary_.query(request.raw_input, request.segmentation);
+    return dictionary_.query(request.raw_input, request.segmentation, request.enable_quanpin_autocorrect);
 }
 
 bool QuanpinEngine::expand_initial_candidates(const QueryRequest &request, std::vector<WordItem> &candidates)

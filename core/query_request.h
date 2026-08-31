@@ -23,6 +23,7 @@ struct QueryRequest
     std::string segmentation;
     bool enable_shuangpin_helpcode = false;
     bool enable_quanpin_helpcode = false;
+    bool enable_quanpin_autocorrect = true;
     std::vector<KeyStroke> key_strokes;
     bool valid = false;
 };

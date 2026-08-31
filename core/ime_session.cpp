@@ -59,6 +59,11 @@ void ImeSession::set_quanpin_helpcode_enabled(bool enabled)
     enable_quanpin_helpcode_ = enabled;
 }
 
+void ImeSession::set_quanpin_autocorrect_enabled(bool enabled)
+{
+    enable_quanpin_autocorrect_ = enabled;
+}
+
 void ImeSession::replace_shuangpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
 {
     if (scheme_->type() != SchemeType::Shuangpin)
@@ -193,6 +198,7 @@ void ImeSession::refresh_candidates()
     state_.request = scheme_->build_request();
     state_.request.enable_shuangpin_helpcode = enable_shuangpin_helpcode_;
     state_.request.enable_quanpin_helpcode = enable_quanpin_helpcode_;
+    state_.request.enable_quanpin_autocorrect = enable_quanpin_autocorrect_;
     ApplyShuangpinHelpcodeSegmentation(state_.request, shuangpin_profile_);
 
     if (!state_.request.valid)
