@@ -97,7 +97,8 @@ QuanpinDictionary::~QuanpinDictionary()
     }
 }
 
-std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, const std::string &segmentation)
+std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, const std::string &segmentation,
+                                               bool enable_autocorrect)
 {
     if (raw_input.empty())
     {
@@ -107,10 +108,26 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
 
     pinyin_sequence_ = raw_input;
     const auto segments = resolve_segments(raw_input, segmentation);
-    pinyin_segmentation_ = segmentation.empty() ? (segments.empty() ? raw_input : quanpin::join_segments(segments))
-                                                : segmentation;
 
-    const std::string cache_key = series_cache_key(raw_input, pinyin_segmentation_);
+    // Typing autocorrection: when the spelling is not a legal pinyin
+    // combination (the correction cut already fell back to greedy), try to
+    // rewrite the whole string into legal syllables. The corrected
+    // segmentation becomes the primary key so that selection and weight
+    // updates land on the right dictionary entries, and the original
+    // (garbage-leaning) candidates stay behind as a fallback tail.
+    quanpin::Segments corrected;
+    const bool corrected_input = enable_autocorrect && !segments.empty() && raw_input.find('\'') == std::string::npos &&
+                                 !quanpin::has_only_complete_pinyin_segments(segments) &&
+                                 !(corrected = quanpin::autocorrect_cut(raw_input)).empty();
+
+    pinyin_segmentation_ =
+        corrected_input
+            ? quanpin::join_segments(corrected)
+            : (segmentation.empty() ? (segments.empty() ? raw_input : quanpin::join_segments(segments)) : segmentation);
+
+    // Autocorrected results get their own cache slot so they never leak the
+    // fallback tail into plain (correct) spellings sharing the same key.
+    const std::string cache_key = (corrected_input ? "C:" : "") + series_cache_key(raw_input, pinyin_segmentation_);
     if (auto cached = series_cache_.get(cache_key))
     {
         reset_cache_if_database_changed();
@@ -135,33 +152,43 @@ std::vector<WordItem> QuanpinDictionary::query(const std::string &raw_input, con
             alternative_segmentations.end());
     }
 
-    std::vector<WordItem> result = query_series(raw_input, pinyin_segmentation_, segments);
-    if (!alternative_segmentations.empty())
+    std::vector<WordItem> result;
+    if (corrected_input)
     {
-        result = merge_alternative_segmentations(raw_input, pinyin_segmentation_, segments, alternative_segmentations,
-                                                 std::move(result));
+        result = query_series(raw_input, pinyin_segmentation_, corrected);
+        const std::string fallback_segmentation =
+            segmentation.empty() ? quanpin::join_segments(segments) : segmentation;
+        append_unique_words(result, query_series(raw_input, fallback_segmentation, segments));
+    }
+    else
+    {
+        result = query_series(raw_input, pinyin_segmentation_, segments);
+        if (!alternative_segmentations.empty())
+        {
+            result = merge_alternative_segmentations(raw_input, pinyin_segmentation_, segments,
+                                                     alternative_segmentations, std::move(result));
+        }
     }
     series_cache_.insert(cache_key, result);
     current_candidate_list_ = result;
     return current_candidate_list_;
 }
 
-std::optional<WordItem> QuanpinDictionary::find_candidate(
-    const std::string &key, const std::string &value)
+std::optional<WordItem> QuanpinDictionary::find_candidate(const std::string &key, const std::string &value)
 {
     const std::string table = quanpin::build_table_name(quanpin::split_segments(key));
-    if (!db_ || table.empty()) return std::nullopt;
+    if (!db_ || table.empty())
+        return std::nullopt;
     sqlite3_stmt *stmt = nullptr;
-    const std::string sql =
-        "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1";
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return std::nullopt;
+    const std::string sql = "SELECT weight FROM \"" + table + "\" WHERE key=?1 AND value=?2 LIMIT 1";
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        return std::nullopt;
     std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(stmt, sqlite3_finalize);
     if (sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_step(stmt) != SQLITE_ROW)
         return std::nullopt;
-    return WordItem(key, value, sqlite3_column_int64(stmt, 0),
-                    CandidateSource::Database, key);
+    return WordItem(key, value, sqlite3_column_int64(stmt, 0), CandidateSource::Database, key);
 }
 
 bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::vector<WordItem> &candidates)
@@ -217,8 +244,7 @@ bool QuanpinDictionary::expand_initial_candidates(const std::string &code, std::
     return true;
 }
 
-std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_input,
-                                                      const std::string &segmentation,
+std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_input, const std::string &segmentation,
                                                       const quanpin::Segments &segments)
 {
     if (segments.empty())
@@ -337,8 +363,7 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
         {
             constexpr int kInitialCandidateLimit = 24;
             auto result = query_initial(segments.front(), kInitialCandidateLimit);
-            const std::string matched_code =
-                segmentation.empty() ? segments.front() : segmentation;
+            const std::string matched_code = segmentation.empty() ? segments.front() : segmentation;
             for (auto &item : result)
             {
                 item.canonical_pinyin = item.pinyin;
@@ -347,8 +372,7 @@ std::vector<WordItem> QuanpinDictionary::query_database(const quanpin::Segments 
             return result;
         }
 
-        const auto flat_items =
-            quanpin::query_segments_keyed_flat(segments, db_, statement_cache_, INT_MAX);
+        const auto flat_items = quanpin::query_segments_keyed_flat(segments, db_, statement_cache_, INT_MAX);
         std::vector<WordItem> result;
         result.reserve(flat_items.size());
         const std::string code = segmentation.empty() ? quanpin::join_segments(segments) : segmentation;
@@ -414,10 +438,9 @@ std::vector<WordItem> QuanpinDictionary::merge_alternative_segmentations(
     // different segmentations. Keep the best alternative interpretation visible without letting every
     // segmentation occupy a protected slot on the first page.
     const std::string &best_alternative_word = alternative_items.front().value;
-    const auto best_alternative =
-        std::find_if(merged_full.begin(), merged_full.end(), [&](const WordItem &item) {
-            return item.word == best_alternative_word;
-        });
+    const auto best_alternative = std::find_if(merged_full.begin(), merged_full.end(), [&](const WordItem &item) {
+        return item.word == best_alternative_word;
+    });
     if (best_alternative != merged_full.end() &&
         static_cast<size_t>(std::distance(merged_full.begin(), best_alternative)) >
             kBestAlternativeSegmentationMaxIndex)
@@ -455,8 +478,7 @@ std::vector<WordItem> QuanpinDictionary::append_ime_fallback(const std::string &
         std::find_if(result.begin(), result.end(), [&](const WordItem &item) { return item.word == sentence; });
     if (exists == result.end())
     {
-        result.emplace_back(segmentation.empty() ? raw_input : segmentation, sentence, 1,
-                            CandidateSource::Fallback);
+        result.emplace_back(segmentation.empty() ? raw_input : segmentation, sentence, 1, CandidateSource::Fallback);
     }
     return result;
 }
@@ -518,8 +540,7 @@ int QuanpinDictionary::create_word(std::string pinyin, std::string word)
         return ERROR_CODE;
     }
     (void)user_dictionary::record_user_insert(user_dictionary::default_user_db_path(),
-                                              user_dictionary::DictionaryKind::Pinyin,
-                                              pinyin, word, 10000);
+                                              user_dictionary::DictionaryKind::Pinyin, pinyin, word, 10000);
     reset_cache();
     return OK;
 }
@@ -551,8 +572,7 @@ int QuanpinDictionary::create_word_from_canonical_pinyin(std::string pinyin, std
         return ERROR_CODE;
     }
     (void)user_dictionary::record_user_insert(user_dictionary::default_user_db_path(),
-                                              user_dictionary::DictionaryKind::Pinyin,
-                                              pinyin, word, 10000);
+                                              user_dictionary::DictionaryKind::Pinyin, pinyin, word, 10000);
     reset_cache();
     return OK;
 }
@@ -566,10 +586,12 @@ int QuanpinDictionary::update_weight_by_pinyin_and_word(std::string pinyin, std:
 {
     pinyin = remove_delimiters(pinyin);
     const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
-    if (cuts.empty()) return ERROR_CODE;
+    if (cuts.empty())
+        return ERROR_CODE;
     auto segments = cuts.front();
     const size_t han_count = HelpcodeUtils::count_han_chars(word);
-    if (segments.size() > han_count) segments.resize(han_count);
+    if (segments.size() > han_count)
+        segments.resize(han_count);
     const std::string normalized = quanpin::join_segments(segments);
     if (update_data(build_sql_for_updating_word(normalized, word)) != OK)
     {
@@ -584,7 +606,8 @@ int QuanpinDictionary::delete_by_pinyin_and_word(std::string pinyin, std::string
 {
     pinyin = remove_delimiters(pinyin);
     const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
-    if (cuts.empty()) return ERROR_CODE;
+    if (cuts.empty())
+        return ERROR_CODE;
     const std::string normalized = quanpin::join_segments(cuts.front());
     if (delete_data(build_sql_for_deleting_word(normalized, word)) != OK)
     {
@@ -612,13 +635,12 @@ int QuanpinDictionary::insert_word_to_series_cache(const std::string &pinyin, co
     // Keep at most one cloud/AI suggestion in the series cache for this key.
     if (source == CandidateSource::AiSuggestion || source == CandidateSource::CloudSuggestion)
     {
-        list.erase(std::remove_if(list.begin(), list.end(),
-                                  [source](const WordItem &item) { return item.source == source; }),
-                   list.end());
+        list.erase(
+            std::remove_if(list.begin(), list.end(), [source](const WordItem &item) { return item.source == source; }),
+            list.end());
     }
 
-    const auto exists =
-        std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
+    const auto exists = std::find_if(list.begin(), list.end(), [&](const WordItem &item) { return item.word == word; });
     if (exists == list.end())
     {
         if (list.empty())
