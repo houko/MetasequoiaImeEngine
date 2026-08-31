@@ -26,7 +26,8 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
 
     if (helpcode_length == 2)
     {
-        const std::string base_raw_input = quanpin::strip_active_helpcodes(request.raw_input, request.raw_input_with_cases);
+        const std::string base_raw_input =
+            quanpin::strip_active_helpcodes(request.raw_input, request.raw_input_with_cases);
         const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
         const std::string base_segmentation = quanpin::join_segments(cuts.front());
         const std::string help_codes = request.raw_input.substr(request.raw_input.size() - 2, 2);
@@ -37,7 +38,8 @@ std::vector<WordItem> QuanpinEngine::query(const QueryRequest &request)
 
     if (helpcode_length == 1)
     {
-        const std::string base_raw_input = quanpin::strip_active_helpcodes(request.raw_input, request.raw_input_with_cases);
+        const std::string base_raw_input =
+            quanpin::strip_active_helpcodes(request.raw_input, request.raw_input_with_cases);
         const auto cuts = quanpin::cut_pinyin_by_mode(base_raw_input, "correction");
         const std::string base_segmentation = quanpin::join_segments(cuts.front());
         const std::string help_code = request.raw_input.substr(request.raw_input.size() - 1, 1);

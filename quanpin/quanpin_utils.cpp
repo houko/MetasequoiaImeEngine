@@ -409,8 +409,8 @@ std::vector<Segments> sparse_pinyin_fallback_segments(const Segments &segments)
         fallbacks.reserve(rule.replacements.size());
         for (const auto &replacement : rule.replacements)
         {
-            fallbacks.push_back(
-                replacement.append_suffix ? append_rest(replacement.replacement, segments) : replacement.replacement);
+            fallbacks.push_back(replacement.append_suffix ? append_rest(replacement.replacement, segments)
+                                                          : replacement.replacement);
         }
         return fallbacks;
     }

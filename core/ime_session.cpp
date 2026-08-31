@@ -150,9 +150,11 @@ int ImeSession::cache_dynamic_candidate(const std::string &pinyin, const std::st
 
 void ImeSession::replace_japanese_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
 {
-    if (scheme_->type() != SchemeType::JapaneseRomaji) return;
+    if (scheme_->type() != SchemeType::JapaneseRomaji)
+        return;
     auto *japanese_scheme = dynamic_cast<JapaneseRomajiScheme *>(scheme_.get());
-    if (!japanese_scheme) return;
+    if (!japanese_scheme)
+        return;
     japanese_scheme->set_raw_input(raw_input, raw_input_with_cases);
     refresh_candidates();
 }
