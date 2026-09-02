@@ -135,7 +135,7 @@ const std::unordered_set<std::string> &shuangpin_pinyin_set()
         // for shuangpin validation.  The full quanpin table accepts a few extra
         // spellings whose presence changes ambiguous shuangpin segmentation.
         result.insert("eng");
-        for (const char *pinyin : {"chua", "den", "fiao", "jve", "kei", "lo", "lue", "nou", "nue", "nun",
+        for (const char *pinyin : {"chua", "den", "fiao", "jve", "lo", "lue", "nou", "nue", "nun",
                                    "qve", "xve", "yo", "yve", "zhei"})
         {
             result.erase(pinyin);
