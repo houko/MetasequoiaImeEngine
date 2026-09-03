@@ -1,6 +1,7 @@
 #include "../../core/ime_session.h"
 #include "../../core/data_path.h"
 #include "../../japanese/romaji_converter.h"
+#include "../../user_dictionary/user_dictionary_journal.h"
 
 #include <sqlite3.h>
 
@@ -38,6 +39,21 @@ class Database
             sqlite3_free(error);
             throw std::runtime_error(message);
         }
+    }
+
+    bool containsUserDictionaryOperation(const std::string &value)
+    {
+        sqlite3_stmt *statement = nullptr;
+        if (sqlite3_prepare_v2(database_,
+                               "SELECT 1 FROM user_dictionary_operations WHERE value=?1 LIMIT 1",
+                               -1, &statement, nullptr) != SQLITE_OK)
+        {
+            throw std::runtime_error("Failed to query the user dictionary journal.");
+        }
+        const bool bound = sqlite3_bind_text(statement, 1, value.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+        const bool found = bound && sqlite3_step(statement) == SQLITE_ROW;
+        sqlite3_finalize(statement);
+        return found;
     }
 
   private:
@@ -90,6 +106,33 @@ int main()
         if (session.get_preedit() != "niha")
         {
             throw std::runtime_error("Backspace did not update the quanpin preedit.");
+        }
+    }
+
+    const std::filesystem::path user_database = data_directory / "msime_user.db";
+    if (!user_dictionary::record_upsert(metasequoia::path_to_utf8(user_database),
+                                        user_dictionary::DictionaryKind::Pinyin, "ni'hao", "首次", 100))
+    {
+        throw std::runtime_error("Failed to open the persistent default user dictionary.");
+    }
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path previous_user_database = data_directory / "msime_user.previous.db";
+    std::filesystem::rename(user_database, previous_user_database);
+    if (!user_dictionary::record_upsert(metasequoia::path_to_utf8(user_database),
+                                        user_dictionary::DictionaryKind::Pinyin, "ni'hao", "重开", 200))
+    {
+        throw std::runtime_error("The persistent default user dictionary did not reopen after close.");
+    }
+    user_dictionary::close_default_user_database();
+    {
+        Database previous(previous_user_database);
+        Database current(user_database);
+        if (!previous.containsUserDictionaryOperation("首次") ||
+            previous.containsUserDictionaryOperation("重开") ||
+            !current.containsUserDictionaryOperation("重开") ||
+            current.containsUserDictionaryOperation("首次"))
+        {
+            throw std::runtime_error("The reopened default user dictionary wrote through the stale handle.");
         }
     }
 
