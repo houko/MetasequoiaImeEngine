@@ -8,19 +8,13 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <spdlog/spdlog.h>
 
 namespace
 {
-std::string get_local_appdata_path()
-{
-    return ShuangpinUtil::get_local_appdata_path();
-}
-
-const std::string kAppName = "metasequoiaime";
-const std::string kPathSeparator = "\\";
 const std::string kHelpcodeDirectoryName = "helpcodes";
 const std::string kLantianHelpcodeFileName = "helpcode.txt";
 const std::string kZiranmaHelpcodeFileName = "zrm_helpcode_big_unique.txt";
@@ -42,8 +36,7 @@ std::atomic<HelpcodeSchemaIndex> g_helpcode_schema{HelpcodeSchemaIndex::Lantian}
 std::unordered_map<std::string, std::string> initialize_helpcode_keymap(const std::string &file_name)
 {
     std::unordered_map<std::string, std::string> result;
-    std::ifstream helpcode_path(get_local_appdata_path() + kPathSeparator + kAppName + kPathSeparator +
-                                kHelpcodeDirectoryName + kPathSeparator + file_name);
+    std::ifstream helpcode_path(shuangpin::get_data_file_path(std::filesystem::path(kHelpcodeDirectoryName) / file_name));
     if (!helpcode_path.is_open())
     {
         (void)0;

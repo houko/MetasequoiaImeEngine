@@ -10,6 +10,7 @@
 #include <limits>
 #include <mutex>
 #include <numeric>
+#include "../core/data_path.h"
 #include "../english/english_dictionary.h"
 
 namespace user_dictionary
@@ -317,12 +318,7 @@ bool apply_english(sqlite3 *db, const std::string &key, const std::string &value
 
 std::string default_user_db_path()
 {
-    char *local_app_data = nullptr;
-    size_t length = 0;
-    const errno_t error = _dupenv_s(&local_app_data, &length, "LOCALAPPDATA");
-    const std::string base = error == 0 && local_app_data != nullptr ? local_app_data : "";
-    free(local_app_data);
-    return base + "\\metasequoiaime\\msime_user.db";
+    return metasequoia::path_to_utf8(metasequoia::data_file_path("msime_user.db"));
 }
 
 namespace
