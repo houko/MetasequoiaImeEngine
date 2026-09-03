@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS arm64
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install boost fmt spdlog
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 20
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        shell: pwsh
+        run: vcpkg install --triplet x64-windows-static
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 20
