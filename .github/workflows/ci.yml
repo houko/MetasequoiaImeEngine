@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Install dependencies
         run: brew install boost fmt spdlog
       - name: Configure
@@ -29,6 +31,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Install dependencies
         shell: pwsh
         run: vcpkg install --triplet x64-windows-static
