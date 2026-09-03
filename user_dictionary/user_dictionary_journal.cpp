@@ -323,17 +323,28 @@ std::string default_user_db_path()
 
 namespace
 {
+struct PersistentDefaultUserDatabase
+{
+    std::mutex mutex;
+    Db database;
+};
+
+PersistentDefaultUserDatabase &persistent_default_user_database_state()
+{
+    static PersistentDefaultUserDatabase state;
+    return state;
+}
+
 sqlite3 *persistent_default_user_database()
 {
-    static std::mutex mutex;
-    static Db database;
-    std::lock_guard lock(mutex);
-    if (!database)
+    PersistentDefaultUserDatabase &state = persistent_default_user_database_state();
+    std::lock_guard lock(state.mutex);
+    if (!state.database)
     {
-        database = open_database(default_user_db_path(), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-        if (database && !ensure_schema(database.get())) database.reset();
+        state.database = open_database(default_user_db_path(), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+        if (state.database && !ensure_schema(state.database.get())) state.database.reset();
     }
-    return database.get();
+    return state.database.get();
 }
 
 class UserDatabase
@@ -360,6 +371,13 @@ private:
     sqlite3 *db_ = nullptr;
 };
 } // namespace
+
+void close_default_user_database()
+{
+    PersistentDefaultUserDatabase &state = persistent_default_user_database_state();
+    std::lock_guard lock(state.mutex);
+    state.database.reset();
+}
 
 bool ensure_user_database(const std::string &user_db_path)
 {
