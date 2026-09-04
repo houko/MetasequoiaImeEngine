@@ -1,5 +1,7 @@
 #include "input_session.h"
 
+#include "../common/helpcode_utils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <iterator>
@@ -70,6 +72,25 @@ KeyResult InputSession::select_candidate(const std::string &candidate)
         return {};
     }
     return commit(static_cast<std::size_t>(std::distance(candidates().begin(), found)));
+}
+
+KeyResult InputSession::select_candidate_edge(std::size_t index, CandidateEdge edge)
+{
+    if (!has_composition() || index >= candidates().size())
+    {
+        return {};
+    }
+
+    const std::string &candidate = candidates()[index].word;
+    std::string character = edge == CandidateEdge::FirstHan ? HelpcodeUtils::get_first_han_char(candidate)
+                                                             : HelpcodeUtils::get_last_han_char(candidate);
+    if (character.empty())
+    {
+        return {};
+    }
+
+    engine_.reset();
+    return {true, std::move(character)};
 }
 
 void InputSession::switch_scheme(SchemeType scheme_type)

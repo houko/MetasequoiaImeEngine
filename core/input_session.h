@@ -28,6 +28,12 @@ struct KeyResult
     std::optional<std::string> commit;
 };
 
+enum class CandidateEdge
+{
+    FirstHan,
+    LastHan,
+};
+
 // Platform-neutral composition session shared by the native frontends. It owns an ImeSession and
 // applies the key-handling and commit policy that each frontend would otherwise reimplement, so a
 // frontend only has to translate platform key events into these calls.
@@ -44,6 +50,7 @@ class InputSession
     KeyResult handle_command(Command command);
     KeyResult select_candidate(std::size_t index);
     KeyResult select_candidate(const std::string &candidate);
+    KeyResult select_candidate_edge(std::size_t index, CandidateEdge edge);
 
     // Switching schemes discards the current composition. A frontend that promises to preserve
     // typed text must commit it before calling this method.

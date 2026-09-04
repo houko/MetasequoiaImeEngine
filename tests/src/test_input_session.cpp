@@ -3,6 +3,7 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -60,6 +61,22 @@ void require(bool condition, const char *message)
         throw std::runtime_error(message);
     }
 }
+
+std::size_t candidate_index(const metasequoia::InputSession &session, const std::string &word)
+{
+    const auto found = std::find_if(session.candidates().begin(), session.candidates().end(),
+                                    [&](const WordItem &item) { return item.word == word; });
+    if (found == session.candidates().end())
+    {
+        std::string message = "The expected edge-selection candidate was not produced: " + word + "; actual:";
+        for (const auto &candidate : session.candidates())
+        {
+            message += " [" + candidate.word + "]";
+        }
+        throw std::runtime_error(message);
+    }
+    return static_cast<std::size_t>(std::distance(session.candidates().begin(), found));
+}
 } // namespace
 
 int main()
@@ -82,6 +99,9 @@ int main()
         database.execute("CREATE TABLE tbl_2_n(key TEXT, jp TEXT, value TEXT, weight INTEGER)");
         database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '你好', 200)");
         database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '拟好', 100)");
+        database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '𠀀方案𠮷', 90)");
+        database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', 'C语言 2', 80)");
+        database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', 'GitHub', 70)");
 
         metasequoia::InputSession session(SchemeType::Quanpin);
         type(session, "nihao");
@@ -105,6 +125,49 @@ int main()
 
         const auto leading = session.handle_command(metasequoia::Command::CommitCandidate);
         require(leading.handled && leading.commit == "你好", "CommitCandidate did not commit the leading candidate.");
+
+        type(session, "nihao");
+        const auto first_bmp = session.select_candidate_edge(candidate_index(session, "拟好"),
+                                                              metasequoia::CandidateEdge::FirstHan);
+        require(first_bmp.handled && first_bmp.commit == "拟" && !session.has_composition(),
+                "FirstHan did not commit the first BMP Han character and reset the composition.");
+
+        type(session, "nihao");
+        const auto last_bmp = session.select_candidate_edge(candidate_index(session, "拟好"),
+                                                             metasequoia::CandidateEdge::LastHan);
+        require(last_bmp.handled && last_bmp.commit == "好" && !session.has_composition(),
+                "LastHan did not commit the last BMP Han character and reset the composition.");
+
+        type(session, "nihao");
+        const auto first_supplementary = session.select_candidate_edge(
+            candidate_index(session, "𠀀方案𠮷"), metasequoia::CandidateEdge::FirstHan);
+        require(first_supplementary.handled && first_supplementary.commit == "𠀀" && !session.has_composition(),
+                "FirstHan split a supplementary-plane Han character.");
+
+        type(session, "nihao");
+        const auto last_supplementary = session.select_candidate_edge(
+            candidate_index(session, "𠀀方案𠮷"), metasequoia::CandidateEdge::LastHan);
+        require(last_supplementary.handled && last_supplementary.commit == "𠮷" && !session.has_composition(),
+                "LastHan split a supplementary-plane Han character.");
+
+        type(session, "nihao");
+        const auto first_mixed = session.select_candidate_edge(candidate_index(session, "C语言 2"),
+                                                                metasequoia::CandidateEdge::FirstHan);
+        require(first_mixed.handled && first_mixed.commit == "语",
+                "FirstHan did not skip a non-Han candidate prefix.");
+
+        type(session, "nihao");
+        const auto last_mixed = session.select_candidate_edge(candidate_index(session, "C语言 2"),
+                                                               metasequoia::CandidateEdge::LastHan);
+        require(last_mixed.handled && last_mixed.commit == "言",
+                "LastHan did not skip a non-Han candidate suffix.");
+
+        type(session, "nihao");
+        const auto no_han = session.select_candidate_edge(candidate_index(session, "GitHub"),
+                                                           metasequoia::CandidateEdge::FirstHan);
+        require(!no_han.handled && session.has_composition(),
+                "A candidate without Han characters was consumed by edge selection.");
+        session.handle_command(metasequoia::Command::Cancel);
 
         type(session, "nihao");
         session.handle_command(metasequoia::Command::Backspace);
