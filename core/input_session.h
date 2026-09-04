@@ -86,6 +86,12 @@ struct EnglishInputOptions
     std::size_t minimum_prefix = 2;
 };
 
+struct MixedExpressiveOptions
+{
+    bool emoji_candidates = false;
+    bool kaomoji_candidates = false;
+};
+
 // Platform-neutral composition session shared by the native frontends. It owns an ImeSession and
 // applies the key-handling and commit policy that each frontend would otherwise reimplement, so a
 // frontend only has to translate platform key events into these calls.
@@ -121,6 +127,8 @@ class InputSession
     const LocalModeOptions &local_mode_options() const;
     bool set_english_input_options(EnglishInputOptions options);
     const EnglishInputOptions &english_input_options() const;
+    void set_mixed_expressive_options(MixedExpressiveOptions options);
+    const MixedExpressiveOptions &mixed_expressive_options() const;
     void set_dedicated_english_mode(bool enabled);
     bool dedicated_english_mode() const;
     LocalInputMode local_input_mode() const;
@@ -146,7 +154,7 @@ class InputSession
     KeyResult commit(std::size_t index);
     KeyResult handle_local_character(char character);
     std::optional<std::string> update_local_candidates();
-    void update_mixed_english_candidates();
+    void update_mixed_candidates();
     void update_dedicated_english_candidates();
     EnglishDictionary &english_dictionary();
     void reset_composition();
@@ -164,11 +172,12 @@ class InputSession
     bool frequency_adjustment_configured_ = false;
     LocalModeOptions local_mode_options_;
     EnglishInputOptions english_input_options_;
+    MixedExpressiveOptions mixed_expressive_options_;
     std::unique_ptr<EnglishDictionary> english_dictionary_;
     bool dedicated_english_mode_ = false;
     std::string dedicated_english_preedit_;
     std::vector<WordItem> dedicated_english_candidates_;
-    std::vector<WordItem> mixed_english_candidates_;
+    std::vector<WordItem> mixed_candidates_;
     LocalInputMode local_input_mode_ = LocalInputMode::None;
     std::string local_preedit_;
     std::vector<WordItem> local_candidates_;

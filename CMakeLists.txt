@@ -136,6 +136,10 @@ if(BUILD_TESTING)
     target_link_libraries(test_english_input_session PRIVATE MetasequoiaIme::Engine)
     add_test(NAME english_input_session COMMAND test_english_input_session)
 
+    add_executable(test_mixed_expressive_input_session tests/src/test_mixed_expressive_input_session.cpp)
+    target_link_libraries(test_mixed_expressive_input_session PRIVATE MetasequoiaIme::Engine)
+    add_test(NAME mixed_expressive_input_session COMMAND test_mixed_expressive_input_session)
+
     add_executable(test_local_modes tests/src/test_local_modes.cpp)
     target_link_libraries(test_local_modes PRIVATE MetasequoiaIme::Engine)
     add_test(NAME local_modes COMMAND test_local_modes)

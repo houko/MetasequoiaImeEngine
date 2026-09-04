@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <iterator>
+#include <unordered_set>
 #include <utility>
 
 namespace metasequoia
@@ -130,7 +132,7 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     const ImeKeyCode key_code =
         character == '\'' ? ImeKey::Apostrophe : static_cast<ImeKeyCode>(std::toupper(unsigned_character));
     engine_.handle_key(key_code, 0, static_cast<ImeCharacter>(unsigned_character));
-    update_mixed_english_candidates();
+    update_mixed_candidates();
     return {preedit() != previous_preedit, std::nullopt, std::nullopt};
 }
 
@@ -254,7 +256,7 @@ KeyResult InputSession::handle_command(Command command)
             return {true, std::nullopt, std::move(diagnostic)};
         }
         engine_.handle_key(ImeKey::Backspace);
-        update_mixed_english_candidates();
+        update_mixed_candidates();
         return {true, std::nullopt, std::nullopt};
     case Command::CommitCandidate:
         return commit(0);
@@ -378,13 +380,24 @@ bool InputSession::set_english_input_options(EnglishInputOptions options)
         return false;
     }
     english_input_options_ = options;
-    update_mixed_english_candidates();
+    update_mixed_candidates();
     return true;
 }
 
 const EnglishInputOptions &InputSession::english_input_options() const
 {
     return english_input_options_;
+}
+
+void InputSession::set_mixed_expressive_options(MixedExpressiveOptions options)
+{
+    mixed_expressive_options_ = options;
+    update_mixed_candidates();
+}
+
+const MixedExpressiveOptions &InputSession::mixed_expressive_options() const
+{
+    return mixed_expressive_options_;
 }
 
 void InputSession::set_dedicated_english_mode(bool enabled)
@@ -416,7 +429,7 @@ void InputSession::switch_scheme(SchemeType scheme_type)
 {
     reset_composition();
     engine_.switch_scheme(scheme_type);
-    update_mixed_english_candidates();
+    update_mixed_candidates();
 }
 
 SchemeType InputSession::scheme() const
@@ -482,10 +495,11 @@ const std::vector<WordItem> &InputSession::candidates() const
     {
         return local_candidates_;
     }
-    if (english_input_options_.mixed_candidates &&
+    if ((english_input_options_.mixed_candidates || mixed_expressive_options_.emoji_candidates ||
+         mixed_expressive_options_.kaomoji_candidates) &&
         (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
     {
-        return mixed_english_candidates_;
+        return mixed_candidates_;
     }
     return engine_.get_candidates();
 }
@@ -614,34 +628,87 @@ std::optional<std::string> InputSession::update_local_candidates()
     return std::nullopt;
 }
 
-void InputSession::update_mixed_english_candidates()
+void InputSession::update_mixed_candidates()
 {
-    mixed_english_candidates_ = engine_.get_candidates();
-    if (!english_input_options_.mixed_candidates || dedicated_english_mode_ ||
+    mixed_candidates_ = engine_.get_candidates();
+    if ((!english_input_options_.mixed_candidates && !mixed_expressive_options_.emoji_candidates &&
+         !mixed_expressive_options_.kaomoji_candidates) ||
+        dedicated_english_mode_ || local_input_mode_ != LocalInputMode::None ||
         (scheme() != SchemeType::Quanpin && scheme() != SchemeType::Shuangpin))
     {
         return;
     }
 
     const std::string &prefix = engine_.get_request().raw_input;
-    if (prefix.size() < english_input_options_.minimum_prefix ||
-        !std::all_of(prefix.begin(), prefix.end(), [](unsigned char character) {
-            return character >= 'a' && character <= 'z';
-        }))
+    if (prefix.empty())
     {
         return;
     }
 
-    auto english_candidates = english_dictionary().query_prefix(prefix, 5);
-    for (auto &candidate : english_candidates)
+    std::unordered_set<std::string> seen;
+    for (const auto &candidate : mixed_candidates_)
     {
-        const bool duplicate = std::any_of(
-            mixed_english_candidates_.begin(), mixed_english_candidates_.end(),
-            [&](const WordItem &existing) { return existing.word == candidate.word; });
-        if (!duplicate)
+        seen.insert(candidate.word);
+    }
+
+    const auto collect_unique = [&](std::vector<WordItem> candidates) {
+        std::vector<WordItem> unique;
+        unique.reserve(candidates.size());
+        for (auto &candidate : candidates)
         {
-            mixed_english_candidates_.push_back(std::move(candidate));
+            if (seen.insert(candidate.word).second)
+            {
+                unique.push_back(std::move(candidate));
+            }
         }
+        return unique;
+    };
+
+    std::vector<WordItem> english_candidates;
+    const bool lower_ascii_prefix =
+        std::all_of(prefix.begin(), prefix.end(), [](unsigned char character) {
+            return character >= 'a' && character <= 'z';
+        });
+    if (english_input_options_.mixed_candidates &&
+        prefix.size() >= english_input_options_.minimum_prefix && lower_ascii_prefix)
+    {
+        english_candidates = collect_unique(english_dictionary().query_prefix(prefix, 5));
+    }
+
+    std::vector<WordItem> emoji_candidates;
+    if (mixed_expressive_options_.emoji_candidates && prefix.size() >= 2)
+    {
+        emoji_candidates = collect_unique(
+            local_modes::query_emoji(prefix, scheme(), 3, shuangpin_profile_).candidates);
+    }
+
+    std::vector<WordItem> kaomoji_candidates;
+    if (mixed_expressive_options_.kaomoji_candidates && prefix.size() >= 2)
+    {
+        kaomoji_candidates = collect_unique(
+            local_modes::query_kaomoji(prefix, scheme(), 3, shuangpin_profile_).candidates);
+    }
+
+    std::size_t priority_slot = std::min<std::size_t>(1, mixed_candidates_.size());
+    const auto insert_leading = [&](std::vector<WordItem> &source) {
+        if (source.empty())
+        {
+            return;
+        }
+        mixed_candidates_.insert(mixed_candidates_.begin() + static_cast<std::ptrdiff_t>(priority_slot),
+                                 std::move(source.front()));
+        source.erase(source.begin());
+        ++priority_slot;
+    };
+    insert_leading(english_candidates);
+    insert_leading(emoji_candidates);
+    insert_leading(kaomoji_candidates);
+
+    for (auto *source : {&english_candidates, &emoji_candidates, &kaomoji_candidates})
+    {
+        mixed_candidates_.insert(mixed_candidates_.end(),
+                                 std::make_move_iterator(source->begin()),
+                                 std::make_move_iterator(source->end()));
     }
 }
 
@@ -682,7 +749,7 @@ void InputSession::reset_composition()
     local_candidates_.clear();
     dedicated_english_preedit_.clear();
     dedicated_english_candidates_.clear();
-    mixed_english_candidates_.clear();
+    mixed_candidates_.clear();
     engine_.reset();
 }
 
