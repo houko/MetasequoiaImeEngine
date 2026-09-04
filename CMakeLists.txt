@@ -37,6 +37,7 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     japanese/romaji_converter.cpp
     local_modes/date_time_query.cpp
     local_modes/emoji_query.cpp
+    local_modes/jianpin_query.cpp
     local_modes/kaomoji_query.cpp
     local_modes/quick_phrase_query.cpp
     local_modes/unicode_query.cpp
@@ -139,6 +140,10 @@ if(BUILD_TESTING)
     add_executable(test_mixed_expressive_input_session tests/src/test_mixed_expressive_input_session.cpp)
     target_link_libraries(test_mixed_expressive_input_session PRIVATE MetasequoiaIme::Engine)
     add_test(NAME mixed_expressive_input_session COMMAND test_mixed_expressive_input_session)
+
+    add_executable(test_jianpin_input_session tests/src/test_jianpin_input_session.cpp)
+    target_link_libraries(test_jianpin_input_session PRIVATE MetasequoiaIme::Engine)
+    add_test(NAME jianpin_input_session COMMAND test_jianpin_input_session)
 
     add_executable(test_local_modes tests/src/test_local_modes.cpp)
     target_link_libraries(test_local_modes PRIVATE MetasequoiaIme::Engine)
