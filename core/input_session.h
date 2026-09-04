@@ -1,9 +1,11 @@
 #pragma once
 
 #include "ime_session.h"
+#include "../local_modes/date_time_query.h"
 #include "word_item.h"
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -109,6 +111,7 @@ class InputSession
     void set_local_mode_options(LocalModeOptions options);
     const LocalModeOptions &local_mode_options() const;
     LocalInputMode local_input_mode() const;
+    void set_local_date_time_provider(std::function<local_modes::LocalDateTime()> provider);
 
     SchemeType scheme_type() const;
     bool quanpin_autocorrect_enabled() const;
@@ -146,5 +149,6 @@ class InputSession
     LocalInputMode local_input_mode_ = LocalInputMode::None;
     std::string local_preedit_;
     std::vector<WordItem> local_candidates_;
+    std::function<local_modes::LocalDateTime()> local_date_time_provider_;
 };
 } // namespace metasequoia
