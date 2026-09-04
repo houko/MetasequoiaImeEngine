@@ -2,6 +2,8 @@
 
 #include "../common/helpcode_utils.h"
 #include "../local_modes/date_time_query.h"
+#include "../local_modes/emoji_query.h"
+#include "../local_modes/kaomoji_query.h"
 #include "../local_modes/quick_phrase_query.h"
 #include "../local_modes/unicode_query.h"
 #include "../user_dictionary/user_dictionary_journal.h"
@@ -35,7 +37,8 @@ const char *frequency_mode_name(FrequencyAdjustmentMode mode)
 }
 } // namespace
 
-InputSession::InputSession(SchemeType scheme_type) : engine_(scheme_type)
+InputSession::InputSession(SchemeType scheme_type, const ShuangpinProfile &shuangpin_profile)
+    : engine_(scheme_type, shuangpin_profile), shuangpin_profile_(shuangpin_profile)
 {
 }
 
@@ -73,6 +76,22 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     {
         local_input_mode_ = LocalInputMode::QuickPhrase;
         local_preedit_ = "K";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    if (shift_only && character == 'E' && local_mode_options_.emoji && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::Emoji;
+        local_preedit_ = "E";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    if (shift_only && character == 'M' && local_mode_options_.kaomoji && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::Kaomoji;
+        local_preedit_ = "M";
         local_candidates_.clear();
         return {true, std::nullopt, std::nullopt};
     }
@@ -204,7 +223,9 @@ void InputSession::set_local_mode_options(LocalModeOptions options)
     local_mode_options_ = options;
     if ((local_input_mode_ == LocalInputMode::Unicode && !local_mode_options_.unicode) ||
         (local_input_mode_ == LocalInputMode::DateTime && !local_mode_options_.date_time) ||
-        (local_input_mode_ == LocalInputMode::QuickPhrase && !local_mode_options_.quick_phrase))
+        (local_input_mode_ == LocalInputMode::QuickPhrase && !local_mode_options_.quick_phrase) ||
+        (local_input_mode_ == LocalInputMode::Emoji && !local_mode_options_.emoji) ||
+        (local_input_mode_ == LocalInputMode::Kaomoji && !local_mode_options_.kaomoji))
     {
         reset_composition();
     }
@@ -287,6 +308,17 @@ KeyResult InputSession::commit(std::size_t index)
 
 KeyResult InputSession::handle_local_character(char character)
 {
+    if (local_input_mode_ == LocalInputMode::Emoji || local_input_mode_ == LocalInputMode::Kaomoji)
+    {
+        const bool ascii_letter = (character >= 'a' && character <= 'z') ||
+                                  (character >= 'A' && character <= 'Z');
+        if (!ascii_letter && character != '\'')
+        {
+            return {true, std::nullopt, std::nullopt};
+        }
+        local_preedit_.push_back(character);
+        return {true, std::nullopt, update_local_candidates()};
+    }
     if (local_input_mode_ == LocalInputMode::QuickPhrase)
     {
         if (character < 'a' || character > 'z')
@@ -341,9 +373,21 @@ std::optional<std::string> InputSession::update_local_candidates()
         local_candidates_ = std::move(result.candidates);
         return std::move(result.diagnostic);
     }
-    case LocalInputMode::None:
     case LocalInputMode::Emoji:
+    {
+        local_modes::LocalQueryResult result = local_modes::query_emoji(
+            local_preedit_.substr(1), scheme(), 10, shuangpin_profile_);
+        local_candidates_ = std::move(result.candidates);
+        return std::move(result.diagnostic);
+    }
     case LocalInputMode::Kaomoji:
+    {
+        local_modes::LocalQueryResult result = local_modes::query_kaomoji(
+            local_preedit_.substr(1), scheme(), 10, shuangpin_profile_);
+        local_candidates_ = std::move(result.candidates);
+        return std::move(result.diagnostic);
+    }
+    case LocalInputMode::None:
     case LocalInputMode::SuperJianpin:
     case LocalInputMode::TemporaryEnglish:
     case LocalInputMode::TemporaryJapanese:

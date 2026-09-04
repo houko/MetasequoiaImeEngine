@@ -84,7 +84,8 @@ struct LocalModeOptions
 class InputSession
 {
   public:
-    explicit InputSession(SchemeType scheme_type);
+    explicit InputSession(SchemeType scheme_type,
+                          const ShuangpinProfile &shuangpin_profile = GetXiaoheShuangpinProfile());
 
     // Feeds one printable character. Anything other than a letter or an apostrophe is rejected as
     // unhandled so the frontend can pass it through to the client application.
@@ -125,6 +126,7 @@ class InputSession
     std::optional<std::string> learn_candidate(std::size_t index);
 
     ImeSession engine_;
+    const ShuangpinProfile &shuangpin_profile_;
     FrequencyAdjustmentOptions frequency_adjustment_;
     LocalModeOptions local_mode_options_;
     LocalInputMode local_input_mode_ = LocalInputMode::None;

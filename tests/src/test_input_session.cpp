@@ -678,6 +678,107 @@ int main()
                 corrupt_quick_phrase.candidates().empty(),
             "A corrupt quick-phrase database did not report a non-blocking diagnostic.");
 
+    const std::filesystem::path expressive_directory = data_directory / "expressive-modes";
+    std::filesystem::create_directories(expressive_directory);
+    {
+        Database database(expressive_directory / "others.db");
+        database.execute("CREATE TABLE emoji_pinyin(key TEXT,emoji TEXT,sort_order INTEGER)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xiaolian','😀',10)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xiao''lian','😄',20)");
+        database.execute("CREATE TABLE kaomoji(pinyin TEXT,jianpin TEXT,kaomoji TEXT,sort_order INTEGER)");
+        database.execute("INSERT INTO kaomoji VALUES('haixiu','hx','(*/ω＼*)',10)");
+    }
+    set_data_directory(expressive_directory);
+
+    metasequoia::InputSession emoji_session(SchemeType::Quanpin);
+    require(emoji_session.handle_character('E', true).handled &&
+                emoji_session.local_input_mode() == metasequoia::LocalInputMode::Emoji &&
+                emoji_session.preedit() == "E" && emoji_session.candidates().empty(),
+            "Shift+E did not enter an empty Emoji composition.");
+    type(emoji_session, "XIAOLIAN");
+    require(emoji_session.preedit() == "EXIAOLIAN" && emoji_session.candidates().size() == 1 &&
+                emoji_session.candidates().front().word == "😀" &&
+                emoji_session.candidates().front().source == CandidateSource::Emoji,
+            "Emoji mode did not accept uppercase input or expose its candidate.");
+    const auto emoji_commit = emoji_session.handle_command(metasequoia::Command::CommitCandidate);
+    require(emoji_commit.handled && emoji_commit.commit == "😀" &&
+                emoji_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing an Emoji candidate did not leave Emoji mode.");
+
+    require(emoji_session.handle_character('E', true).handled,
+            "Emoji mode could not be re-entered for apostrophe coverage.");
+    type(emoji_session, "xiao'lian");
+    require(emoji_session.preedit() == "Exiao'lian" && emoji_session.candidates().size() == 1 &&
+                emoji_session.candidates().front().word == "😄",
+            "Emoji mode did not retain and query an apostrophe.");
+    const std::string emoji_preedit = emoji_session.preedit();
+    require(emoji_session.handle_character('1').handled && emoji_session.preedit() == emoji_preedit,
+            "Invalid Emoji input changed the local composition.");
+    require(emoji_session.handle_command(metasequoia::Command::Backspace).handled &&
+                emoji_session.preedit() == "Exiao'lia",
+            "Emoji-mode Backspace did not edit and refresh the composition.");
+    require(emoji_session.handle_command(metasequoia::Command::Cancel).handled &&
+                emoji_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Cancel did not leave Emoji mode.");
+
+    metasequoia::InputSession kaomoji_session(SchemeType::Shuangpin);
+    require(kaomoji_session.handle_character('M', true).handled &&
+                kaomoji_session.local_input_mode() == metasequoia::LocalInputMode::Kaomoji,
+            "Shift+M did not enter kaomoji mode in Shuangpin.");
+    type(kaomoji_session, "hx");
+    require(kaomoji_session.candidates().size() == 1 &&
+                kaomoji_session.candidates().front().word == "(*/ω＼*)" &&
+                kaomoji_session.candidates().front().source == CandidateSource::Kaomoji,
+            "Kaomoji mode did not expose its Shuangpin-expanded candidate.");
+    const auto kaomoji_commit = kaomoji_session.select_candidate(0);
+    require(kaomoji_commit.handled && kaomoji_commit.commit == "(*/ω＼*)" &&
+                kaomoji_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing a kaomoji did not leave kaomoji mode.");
+
+    metasequoia::LocalModeOptions disabled_expressive_options;
+    disabled_expressive_options.emoji = false;
+    disabled_expressive_options.kaomoji = false;
+    metasequoia::InputSession disabled_expressive(SchemeType::Quanpin);
+    disabled_expressive.set_local_mode_options(disabled_expressive_options);
+    require(disabled_expressive.handle_character('E', true).handled &&
+                disabled_expressive.local_input_mode() == metasequoia::LocalInputMode::None &&
+                disabled_expressive.handle_command(metasequoia::Command::Cancel).handled,
+            "A disabled Emoji mode still intercepted Shift+E.");
+    require(disabled_expressive.handle_character('M', true).handled &&
+                disabled_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled kaomoji mode still intercepted Shift+M.");
+
+    metasequoia::InputSession disabling_active_expressive(SchemeType::Quanpin);
+    require(disabling_active_expressive.handle_character('E', true).handled &&
+                disabling_active_expressive.local_input_mode() == metasequoia::LocalInputMode::Emoji,
+            "Emoji mode could not start before option-reset coverage.");
+    auto disable_active_options = disabling_active_expressive.local_mode_options();
+    disable_active_options.emoji = false;
+    disabling_active_expressive.set_local_mode_options(disable_active_options);
+    require(!disabling_active_expressive.has_composition() &&
+                disabling_active_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Disabling an active Emoji mode did not reset it.");
+
+    metasequoia::InputSession wubi_expressive(SchemeType::Wubi);
+    require(wubi_expressive.handle_character('E', true).handled &&
+                wubi_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Emoji mode started outside a pinyin scheme.");
+    wubi_expressive.handle_command(metasequoia::Command::Cancel);
+    require(wubi_expressive.handle_character('M', true).handled &&
+                wubi_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Kaomoji mode started outside a pinyin scheme.");
+
+    const std::filesystem::path missing_expressive_directory = data_directory / "expressive-missing";
+    std::filesystem::create_directories(missing_expressive_directory);
+    set_data_directory(missing_expressive_directory);
+    metasequoia::InputSession missing_emoji_session(SchemeType::Quanpin);
+    require(missing_emoji_session.handle_character('E', true).handled,
+            "Emoji mode could not start with a missing database.");
+    const auto missing_emoji_result = missing_emoji_session.handle_character('x');
+    require(missing_emoji_result.handled && missing_emoji_result.diagnostic.has_value() &&
+                missing_emoji_session.candidates().empty(),
+            "A missing Emoji database did not report a non-blocking diagnostic.");
+
     std::filesystem::remove_all(data_directory);
     return 0;
 }
