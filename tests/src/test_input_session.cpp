@@ -106,31 +106,40 @@ void prepare_frequency_fixture(const std::filesystem::path &directory)
 {
     std::filesystem::create_directories(directory);
     Database database(directory / "msime.db");
-    database.execute("CREATE TABLE tbl_1_n(key TEXT, jp TEXT, value TEXT, weight INTEGER)");
-    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '甲', 100)");
-    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '乙', 90)");
-    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '丙', 80)");
-    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '丁', 70)");
-    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '戊', 60)");
-    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '己', 50)");
+    database.execute(
+        "BEGIN;"
+        "CREATE TABLE tbl_1_n(key TEXT, jp TEXT, value TEXT, weight INTEGER);"
+        "INSERT INTO tbl_1_n VALUES('ni', 'n', '甲', 100);"
+        "INSERT INTO tbl_1_n VALUES('ni', 'n', '乙', 90);"
+        "INSERT INTO tbl_1_n VALUES('ni', 'n', '丙', 80);"
+        "INSERT INTO tbl_1_n VALUES('ni', 'n', '丁', 70);"
+        "INSERT INTO tbl_1_n VALUES('ni', 'n', '戊', 60);"
+        "INSERT INTO tbl_1_n VALUES('ni', 'n', '己', 50);"
+        "COMMIT;");
 }
 
 void prepare_shuangpin_frequency_fixture(const std::filesystem::path &directory)
 {
     std::filesystem::create_directories(directory);
     Database database(directory / "msime.db");
-    database.execute("CREATE TABLE tbl_2_n(key TEXT, jp TEXT, value TEXT, weight INTEGER)");
-    database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '你好', 100)");
-    database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '拟好', 50)");
+    database.execute(
+        "BEGIN;"
+        "CREATE TABLE tbl_2_n(key TEXT, jp TEXT, value TEXT, weight INTEGER);"
+        "INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '你好', 100);"
+        "INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '拟好', 50);"
+        "COMMIT;");
 }
 
 void prepare_wubi_frequency_fixture(const std::filesystem::path &directory)
 {
     std::filesystem::create_directories(directory);
     Database database(directory / "msime.db");
-    database.execute("CREATE TABLE wubi86(key TEXT, value TEXT, weight INTEGER)");
-    database.execute("INSERT INTO wubi86 VALUES('aaaa', '工', 100)");
-    database.execute("INSERT INTO wubi86 VALUES('aaaa', '或', 50)");
+    database.execute(
+        "BEGIN;"
+        "CREATE TABLE wubi86(key TEXT, value TEXT, weight INTEGER);"
+        "INSERT INTO wubi86 VALUES('aaaa', '工', 100);"
+        "INSERT INTO wubi86 VALUES('aaaa', '或', 50);"
+        "COMMIT;");
 }
 
 std::size_t candidate_index(const metasequoia::InputSession &session, const std::string &word)
@@ -170,6 +179,7 @@ int main()
     std::filesystem::create_directories(data_directory);
     set_data_directory(data_directory);
 
+#ifndef METASEQUOIA_FREQUENCY_TESTS_ONLY
     {
         const std::filesystem::path helpcode_directory = data_directory / "helpcodes";
         write_file(helpcode_directory / "helpcode.txt", "你=ab\n拟=cd\n好=ef\n");
@@ -321,7 +331,9 @@ int main()
 
         require(session.handle_character('\'').handled, "The apostrophe separator was not handled.");
     }
+#endif
 
+#ifndef METASEQUOIA_SKIP_FREQUENCY_TESTS
     struct FrequencyCase
     {
         metasequoia::FrequencyAdjustmentMode mode;
@@ -479,7 +491,9 @@ int main()
     require(!failing_learning_session.set_frequency_adjustment(invalid_frequency),
             "An out-of-range frequency linear step was accepted.");
     user_dictionary::close_default_user_database();
+#endif
 
+#ifndef METASEQUOIA_FREQUENCY_TESTS_ONLY
     metasequoia::InputSession unicode_session(SchemeType::Quanpin);
     require(unicode_session.handle_character('U', true).handled &&
                 unicode_session.local_input_mode() == metasequoia::LocalInputMode::Unicode &&
@@ -778,6 +792,7 @@ int main()
     require(missing_emoji_result.handled && missing_emoji_result.diagnostic.has_value() &&
                 missing_emoji_session.candidates().empty(),
             "A missing Emoji database did not report a non-blocking diagnostic.");
+#endif
 
     std::filesystem::remove_all(data_directory);
     return 0;

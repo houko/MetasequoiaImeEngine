@@ -44,6 +44,18 @@ InputSession::InputSession(SchemeType scheme_type, const ShuangpinProfile &shuan
 
 KeyResult InputSession::handle_character(char character, bool shift_only)
 {
+    if (dedicated_english_mode_)
+    {
+        const bool ascii_letter = (character >= 'a' && character <= 'z') ||
+                                  (character >= 'A' && character <= 'Z');
+        if (!ascii_letter)
+        {
+            return {true, std::nullopt, std::nullopt};
+        }
+        dedicated_english_preedit_.push_back(character);
+        update_dedicated_english_candidates();
+        return {true, std::nullopt, std::nullopt};
+    }
     if (local_input_mode_ != LocalInputMode::None)
     {
         return handle_local_character(character);
@@ -99,6 +111,7 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     const ImeKeyCode key_code =
         character == '\'' ? ImeKey::Apostrophe : static_cast<ImeKeyCode>(std::toupper(unsigned_character));
     engine_.handle_key(key_code, 0, static_cast<ImeCharacter>(unsigned_character));
+    update_mixed_english_candidates();
     return {true, std::nullopt, std::nullopt};
 }
 
@@ -112,6 +125,12 @@ KeyResult InputSession::handle_command(Command command)
     switch (command)
     {
     case Command::Backspace:
+        if (dedicated_english_mode_)
+        {
+            dedicated_english_preedit_.pop_back();
+            update_dedicated_english_candidates();
+            return {true, std::nullopt, std::nullopt};
+        }
         if (local_input_mode_ != LocalInputMode::None)
         {
             std::optional<std::string> diagnostic;
@@ -127,14 +146,22 @@ KeyResult InputSession::handle_command(Command command)
             return {true, std::nullopt, std::move(diagnostic)};
         }
         engine_.handle_key(ImeKey::Backspace);
+        update_mixed_english_candidates();
         return {true, std::nullopt, std::nullopt};
     case Command::CommitCandidate:
         return commit(0);
     case Command::CommitRaw:
     {
         std::string raw = preedit();
+        std::optional<std::string> diagnostic;
+        if (dedicated_english_mode_ &&
+            !user_dictionary::learn_entered_english_word(
+                path_to_utf8(data_file_path("english.db")), user_dictionary::default_user_db_path(), raw))
+        {
+            diagnostic = "English word could not be learned.";
+        }
         reset_composition();
-        return {true, std::move(raw), std::nullopt};
+        return {true, std::move(raw), std::move(diagnostic)};
     }
     case Command::Cancel:
         reset_composition();
@@ -236,6 +263,37 @@ const LocalModeOptions &InputSession::local_mode_options() const
     return local_mode_options_;
 }
 
+bool InputSession::set_english_input_options(EnglishInputOptions options)
+{
+    if (options.minimum_prefix < 1 || options.minimum_prefix > 8)
+    {
+        return false;
+    }
+    english_input_options_ = options;
+    update_mixed_english_candidates();
+    return true;
+}
+
+const EnglishInputOptions &InputSession::english_input_options() const
+{
+    return english_input_options_;
+}
+
+void InputSession::set_dedicated_english_mode(bool enabled)
+{
+    if (dedicated_english_mode_ == enabled)
+    {
+        return;
+    }
+    reset_composition();
+    dedicated_english_mode_ = enabled;
+}
+
+bool InputSession::dedicated_english_mode() const
+{
+    return dedicated_english_mode_;
+}
+
 LocalInputMode InputSession::local_input_mode() const
 {
     return local_input_mode_;
@@ -250,6 +308,7 @@ void InputSession::switch_scheme(SchemeType scheme_type)
 {
     reset_composition();
     engine_.switch_scheme(scheme_type);
+    update_mixed_english_candidates();
 }
 
 SchemeType InputSession::scheme() const
@@ -259,11 +318,19 @@ SchemeType InputSession::scheme() const
 
 bool InputSession::has_composition() const
 {
+    if (dedicated_english_mode_)
+    {
+        return !dedicated_english_preedit_.empty();
+    }
     return !preedit().empty();
 }
 
 const std::string &InputSession::preedit() const
 {
+    if (dedicated_english_mode_)
+    {
+        return dedicated_english_preedit_;
+    }
     if (local_input_mode_ != LocalInputMode::None)
     {
         return local_preedit_;
@@ -273,6 +340,10 @@ const std::string &InputSession::preedit() const
 
 const std::string &InputSession::raw_segmentation() const
 {
+    if (dedicated_english_mode_)
+    {
+        return dedicated_english_preedit_;
+    }
     if (local_input_mode_ != LocalInputMode::None)
     {
         return local_preedit_;
@@ -282,6 +353,10 @@ const std::string &InputSession::raw_segmentation() const
 
 const std::string &InputSession::normalized_segmentation() const
 {
+    if (dedicated_english_mode_)
+    {
+        return dedicated_english_preedit_;
+    }
     if (local_input_mode_ != LocalInputMode::None)
     {
         return local_preedit_;
@@ -291,9 +366,18 @@ const std::string &InputSession::normalized_segmentation() const
 
 const std::vector<WordItem> &InputSession::candidates() const
 {
+    if (dedicated_english_mode_)
+    {
+        return dedicated_english_candidates_;
+    }
     if (local_input_mode_ != LocalInputMode::None)
     {
         return local_candidates_;
+    }
+    if (english_input_options_.mixed_candidates &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        return mixed_english_candidates_;
     }
     return engine_.get_candidates();
 }
@@ -397,16 +481,98 @@ std::optional<std::string> InputSession::update_local_candidates()
     return std::nullopt;
 }
 
+void InputSession::update_mixed_english_candidates()
+{
+    mixed_english_candidates_ = engine_.get_candidates();
+    if (!english_input_options_.mixed_candidates || dedicated_english_mode_ ||
+        (scheme() != SchemeType::Quanpin && scheme() != SchemeType::Shuangpin))
+    {
+        return;
+    }
+
+    const std::string &prefix = engine_.get_request().raw_input;
+    if (prefix.size() < english_input_options_.minimum_prefix ||
+        !std::all_of(prefix.begin(), prefix.end(), [](unsigned char character) {
+            return character >= 'a' && character <= 'z';
+        }))
+    {
+        return;
+    }
+
+    auto english_candidates = english_dictionary().query_prefix(prefix, 5);
+    for (auto &candidate : english_candidates)
+    {
+        const bool duplicate = std::any_of(
+            mixed_english_candidates_.begin(), mixed_english_candidates_.end(),
+            [&](const WordItem &existing) { return existing.word == candidate.word; });
+        if (!duplicate)
+        {
+            mixed_english_candidates_.push_back(std::move(candidate));
+        }
+    }
+}
+
+void InputSession::update_dedicated_english_candidates()
+{
+    dedicated_english_candidates_.clear();
+    if (dedicated_english_preedit_.empty())
+    {
+        return;
+    }
+
+    std::string prefix = dedicated_english_preedit_;
+    std::transform(prefix.begin(), prefix.end(), prefix.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    dedicated_english_candidates_ = english_dictionary().query_prefix(prefix, 1000);
+    if (dedicated_english_candidates_.empty())
+    {
+        dedicated_english_candidates_.emplace_back(
+            "", dedicated_english_preedit_, 0, CandidateSource::Generated);
+    }
+}
+
+EnglishDictionary &InputSession::english_dictionary()
+{
+    if (!english_dictionary_)
+    {
+        english_dictionary_ = std::make_unique<EnglishDictionary>(
+            path_to_utf8(data_file_path("english.db")), false);
+    }
+    return *english_dictionary_;
+}
+
 void InputSession::reset_composition()
 {
     local_input_mode_ = LocalInputMode::None;
     local_preedit_.clear();
     local_candidates_.clear();
+    dedicated_english_preedit_.clear();
+    dedicated_english_candidates_.clear();
+    mixed_english_candidates_.clear();
     engine_.reset();
 }
 
 std::optional<std::string> InputSession::learn_candidate(std::size_t index)
 {
+    if (dedicated_english_mode_ && index < candidates().size() &&
+        candidates()[index].source == CandidateSource::EnglishDictionary &&
+        frequency_adjustment_.mode != FrequencyAdjustmentMode::Disabled && index != 0)
+    {
+        std::string context = dedicated_english_preedit_;
+        std::transform(context.begin(), context.end(), context.begin(), [](unsigned char character) {
+            return static_cast<char>(std::tolower(character));
+        });
+        const WordItem &selected = candidates()[index];
+        bool ranking_changed = false;
+        const bool adjusted = user_dictionary::adjust_english_candidate_ranking(
+            path_to_utf8(data_file_path("english.db")), user_dictionary::default_user_db_path(),
+            "english:" + context, candidates(), selected.pinyin, selected.word,
+            frequency_mode_name(frequency_adjustment_.mode), frequency_adjustment_.linear_step,
+            frequency_adjustment_.trigger_count, false, &ranking_changed);
+        return adjusted ? std::nullopt : std::optional<std::string>(
+            "English candidate frequency could not be persisted.");
+    }
     if (frequency_adjustment_.mode == FrequencyAdjustmentMode::Disabled || index == 0 ||
         index >= candidates().size())
     {

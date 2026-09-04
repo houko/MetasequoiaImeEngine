@@ -17,9 +17,12 @@ bool IsLowerAsciiWord(const std::string &value)
 }
 } // namespace
 
-EnglishDictionary::EnglishDictionary(std::string db_path) : db_path_(std::move(db_path))
+EnglishDictionary::EnglishDictionary(std::string db_path, bool initialize_schema) : db_path_(std::move(db_path))
 {
-    (void)ensure_schema(db_path_);
+    if (initialize_schema)
+    {
+        (void)ensure_schema(db_path_);
+    }
     load_custom_translations();
 }
 
@@ -45,6 +48,7 @@ std::vector<WordItem> EnglishDictionary::query_prefix(const std::string &prefix,
         sqlite3_bind_text(query_statement_, 2, upper_bound.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
         sqlite3_bind_int(query_statement_, 3, sqlite_limit) != SQLITE_OK)
     {
+        sqlite3_reset(query_statement_);
         return {};
     }
 
@@ -62,6 +66,7 @@ std::vector<WordItem> EnglishDictionary::query_prefix(const std::string &prefix,
                                 CandidateSource::EnglishDictionary);
     }
 
+    sqlite3_reset(query_statement_);
     if (result != SQLITE_DONE)
     {
         (void)0;
