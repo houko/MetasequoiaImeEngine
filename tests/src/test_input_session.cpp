@@ -714,6 +714,72 @@ int run_test()
                 wubi_date_time.local_input_mode() == metasequoia::LocalInputMode::None,
             "Date/time mode started outside a pinyin scheme.");
 
+    const std::filesystem::path quick_phrase_directory = data_directory / "quick-phrase";
+    std::filesystem::create_directories(quick_phrase_directory);
+    {
+        Database database(quick_phrase_directory / "msime.db");
+        database.execute("CREATE TABLE quick_parases(key TEXT,value TEXT,weight INTEGER)");
+        database.execute("INSERT INTO quick_parases VALUES('ab','快捷短语一',20)");
+        database.execute("INSERT INTO quick_parases VALUES('aa','快捷短语二',10)");
+    }
+    set_data_directory(quick_phrase_directory);
+    metasequoia::InputSession quick_phrase_session(SchemeType::Quanpin);
+    require(quick_phrase_session.handle_character('K', true).handled &&
+                quick_phrase_session.local_input_mode() == metasequoia::LocalInputMode::QuickPhrase &&
+                quick_phrase_session.preedit() == "K" && quick_phrase_session.candidates().empty(),
+            "Shift+K did not enter an empty quick-phrase composition.");
+    const auto quick_phrase_query = quick_phrase_session.handle_character('a');
+    require(quick_phrase_query.handled && !quick_phrase_query.diagnostic.has_value() &&
+                quick_phrase_session.preedit() == "Ka" && quick_phrase_session.candidates().size() == 2 &&
+                quick_phrase_session.candidates().front().word == "快捷短语一" &&
+                quick_phrase_session.candidates().front().source == CandidateSource::QuickPhrase,
+            "Quick-phrase mode did not expose prefix candidates.");
+    const auto quick_phrase_commit = quick_phrase_session.select_candidate(1);
+    require(quick_phrase_commit.handled && quick_phrase_commit.commit == "快捷短语二" &&
+                quick_phrase_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing a quick phrase did not leave the local mode.");
+
+    require(quick_phrase_session.handle_character('K', true).handled,
+            "Quick-phrase mode could not be re-entered for invalid-input coverage.");
+    const std::string quick_phrase_prefix = quick_phrase_session.preedit();
+    require(quick_phrase_session.handle_character('1').handled &&
+                quick_phrase_session.preedit() == quick_phrase_prefix,
+            "Invalid quick-phrase input leaked into normal composition or changed preedit.");
+    require(quick_phrase_session.handle_command(metasequoia::Command::Backspace).handled &&
+                quick_phrase_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Backspace on a bare quick-phrase prefix did not leave the mode.");
+
+    metasequoia::LocalModeOptions disabled_quick_phrase_options;
+    disabled_quick_phrase_options.quick_phrase = false;
+    metasequoia::InputSession disabled_quick_phrase(SchemeType::Quanpin);
+    disabled_quick_phrase.set_local_mode_options(disabled_quick_phrase_options);
+    require(disabled_quick_phrase.handle_character('K', true).handled &&
+                disabled_quick_phrase.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled quick-phrase mode still intercepted Shift+K.");
+
+    const std::filesystem::path missing_quick_phrase_directory = data_directory / "quick-phrase-missing";
+    std::filesystem::create_directories(missing_quick_phrase_directory);
+    set_data_directory(missing_quick_phrase_directory);
+    metasequoia::InputSession missing_quick_phrase(SchemeType::Quanpin);
+    require(missing_quick_phrase.handle_character('K', true).handled,
+            "Quick-phrase mode could not start with a missing database.");
+    const auto missing_quick_phrase_result = missing_quick_phrase.handle_character('a');
+    require(missing_quick_phrase_result.handled && missing_quick_phrase_result.diagnostic.has_value() &&
+                missing_quick_phrase.candidates().empty(),
+            "A missing quick-phrase database did not report a non-blocking diagnostic.");
+
+    const std::filesystem::path corrupt_quick_phrase_directory = data_directory / "quick-phrase-corrupt";
+    std::filesystem::create_directories(corrupt_quick_phrase_directory);
+    write_file(corrupt_quick_phrase_directory / "msime.db", "not a sqlite database");
+    set_data_directory(corrupt_quick_phrase_directory);
+    metasequoia::InputSession corrupt_quick_phrase(SchemeType::Quanpin);
+    require(corrupt_quick_phrase.handle_character('K', true).handled,
+            "Quick-phrase mode could not start with a corrupt database.");
+    const auto corrupt_quick_phrase_result = corrupt_quick_phrase.handle_character('a');
+    require(corrupt_quick_phrase_result.handled && corrupt_quick_phrase_result.diagnostic.has_value() &&
+                corrupt_quick_phrase.candidates().empty(),
+            "A corrupt quick-phrase database did not report a non-blocking diagnostic.");
+
     std::filesystem::remove_all(data_directory);
     return 0;
 }

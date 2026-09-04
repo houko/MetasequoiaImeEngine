@@ -2,6 +2,7 @@
 
 #include "../common/helpcode_utils.h"
 #include "../local_modes/date_time_query.h"
+#include "../local_modes/quick_phrase_query.h"
 #include "../local_modes/unicode_query.h"
 #include "../user_dictionary/user_dictionary_journal.h"
 #include "data_path.h"
@@ -64,6 +65,14 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     {
         local_input_mode_ = LocalInputMode::DateTime;
         local_preedit_ = "T";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    if (shift_only && character == 'K' && local_mode_options_.quick_phrase && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::QuickPhrase;
+        local_preedit_ = "K";
         local_candidates_.clear();
         return {true, std::nullopt, std::nullopt};
     }
@@ -186,6 +195,7 @@ KeyResult InputSession::handle_command(Command command)
     case Command::Backspace:
         if (local_input_mode_ != LocalInputMode::None)
         {
+            std::optional<std::string> diagnostic;
             if (local_preedit_.size() <= 1)
             {
                 reset_composition();
@@ -193,9 +203,9 @@ KeyResult InputSession::handle_command(Command command)
             else
             {
                 local_preedit_.pop_back();
-                update_local_candidates();
+                diagnostic = update_local_candidates();
             }
-            return {true, std::nullopt, std::nullopt};
+            return {true, std::nullopt, std::move(diagnostic)};
         }
         engine_.handle_key(ImeKey::Backspace);
         return {true, std::nullopt, std::nullopt};
@@ -293,7 +303,8 @@ void InputSession::set_local_mode_options(LocalModeOptions options)
 {
     local_mode_options_ = options;
     if ((local_input_mode_ == LocalInputMode::Unicode && !local_mode_options_.unicode) ||
-        (local_input_mode_ == LocalInputMode::DateTime && !local_mode_options_.date_time))
+        (local_input_mode_ == LocalInputMode::DateTime && !local_mode_options_.date_time) ||
+        (local_input_mode_ == LocalInputMode::QuickPhrase && !local_mode_options_.quick_phrase))
     {
         reset_composition();
     }
@@ -401,6 +412,15 @@ KeyResult InputSession::commit(std::size_t index)
 
 KeyResult InputSession::handle_local_character(char character)
 {
+    if (local_input_mode_ == LocalInputMode::QuickPhrase)
+    {
+        if (character < 'a' || character > 'z')
+        {
+            return {true, std::nullopt, std::nullopt};
+        }
+        local_preedit_.push_back(character);
+        return {true, std::nullopt, update_local_candidates()};
+    }
     if (local_input_mode_ == LocalInputMode::DateTime)
     {
         if (character < 'a' || character > 'z')
@@ -408,8 +428,7 @@ KeyResult InputSession::handle_local_character(char character)
             return {true, std::nullopt, std::nullopt};
         }
         local_preedit_.push_back(character);
-        update_local_candidates();
-        return {true, std::nullopt, std::nullopt};
+        return {true, std::nullopt, update_local_candidates()};
     }
     if (local_input_mode_ != LocalInputMode::Unicode)
     {
@@ -423,34 +442,40 @@ KeyResult InputSession::handle_local_character(char character)
         return {true, std::nullopt, std::nullopt};
     }
     local_preedit_.push_back(character);
-    update_local_candidates();
-    return {true, std::nullopt, std::nullopt};
+    return {true, std::nullopt, update_local_candidates()};
 }
 
-void InputSession::update_local_candidates()
+std::optional<std::string> InputSession::update_local_candidates()
 {
     switch (local_input_mode_)
     {
     case LocalInputMode::Unicode:
         local_candidates_ = local_modes::query_unicode(local_preedit_.substr(1));
-        break;
+        return std::nullopt;
     case LocalInputMode::DateTime:
     {
         const local_modes::LocalDateTime now = local_date_time_provider_ ?
             local_date_time_provider_() : local_modes::current_local_date_time();
         local_candidates_ = local_modes::query_date_time(local_preedit_.substr(1), &now);
-        break;
+        return std::nullopt;
+    }
+    case LocalInputMode::QuickPhrase:
+    {
+        local_modes::QuickPhraseQueryResult result =
+            local_modes::query_quick_phrases(local_preedit_.substr(1));
+        local_candidates_ = std::move(result.candidates);
+        return std::move(result.diagnostic);
     }
     case LocalInputMode::None:
-    case LocalInputMode::QuickPhrase:
     case LocalInputMode::Emoji:
     case LocalInputMode::Kaomoji:
     case LocalInputMode::SuperJianpin:
     case LocalInputMode::TemporaryEnglish:
     case LocalInputMode::TemporaryJapanese:
         local_candidates_.clear();
-        break;
+        return std::nullopt;
     }
+    return std::nullopt;
 }
 
 void InputSession::reset_composition()

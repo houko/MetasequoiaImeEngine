@@ -132,7 +132,7 @@ class InputSession
   private:
     KeyResult commit(std::size_t index);
     KeyResult handle_local_character(char character);
-    void update_local_candidates();
+    std::optional<std::string> update_local_candidates();
     void reset_composition();
     std::optional<std::string> learn_candidate(std::size_t index);
 

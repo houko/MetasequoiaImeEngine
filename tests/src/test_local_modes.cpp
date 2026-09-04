@@ -1,12 +1,50 @@
 #include "../../local_modes/date_time_query.h"
+#include "../../local_modes/quick_phrase_query.h"
+#include "../../core/data_path.h"
+
+#include <sqlite3.h>
 
 #include <array>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
 namespace
 {
 using metasequoia::local_modes::LocalDateTime;
+
+class Database
+{
+  public:
+    explicit Database(const std::filesystem::path &path)
+    {
+        if (sqlite3_open(metasequoia::path_to_utf8(path).c_str(), &database_) != SQLITE_OK)
+        {
+            throw std::runtime_error("Failed to create the quick-phrase test database.");
+        }
+    }
+
+    ~Database()
+    {
+        sqlite3_close(database_);
+    }
+
+    void execute(const char *sql)
+    {
+        char *error = nullptr;
+        if (sqlite3_exec(database_, sql, nullptr, nullptr, &error) != SQLITE_OK)
+        {
+            const std::string message = error == nullptr ? "SQLite operation failed." : error;
+            sqlite3_free(error);
+            throw std::runtime_error(message);
+        }
+    }
+
+  private:
+    sqlite3 *database_ = nullptr;
+};
 
 void require(bool condition, const char *message)
 {
@@ -84,5 +122,58 @@ int main()
                 metasequoia::local_modes::query_date_time("rq", &now, -1).empty() &&
                 metasequoia::local_modes::query_date_time("rq", &now, 3).size() == 3,
             "Date/time query limit or unknown-keyword handling was incorrect.");
+
+    const auto suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    const std::filesystem::path quick_phrase_directory =
+        std::filesystem::temp_directory_path() / ("metasequoia-quick-phrase-" + suffix);
+    std::filesystem::create_directories(quick_phrase_directory);
+    const std::filesystem::path quick_phrase_database = quick_phrase_directory / "msime.db";
+    {
+        Database database(quick_phrase_database);
+        database.execute("CREATE TABLE quick_parases(key TEXT,value TEXT,weight INTEGER)");
+        database.execute("INSERT INTO quick_parases VALUES('ab','highest weight',20)");
+        database.execute("INSERT INTO quick_parases VALUES('aa','tie b',10)");
+        database.execute("INSERT INTO quick_parases VALUES('aa','tie a',10)");
+        database.execute("INSERT INTO quick_parases VALUES('b','outside prefix',100)");
+    }
+
+    const auto quick_phrases =
+        metasequoia::local_modes::query_quick_phrases("a", quick_phrase_database, 10);
+    require(!quick_phrases.diagnostic.has_value() && quick_phrases.candidates.size() == 3 &&
+                quick_phrases.candidates[0].pinyin == "ab" &&
+                quick_phrases.candidates[0].word == "highest weight" &&
+                quick_phrases.candidates[1].pinyin == "aa" && quick_phrases.candidates[1].word == "tie a" &&
+                quick_phrases.candidates[2].word == "tie b" &&
+                quick_phrases.candidates[0].source == CandidateSource::QuickPhrase,
+            "Quick-phrase prefix ordering diverged from Windows.");
+    const auto limited_quick_phrases =
+        metasequoia::local_modes::query_quick_phrases("a", quick_phrase_database, 2);
+    require(!limited_quick_phrases.diagnostic.has_value() && limited_quick_phrases.candidates.size() == 2,
+            "Quick-phrase query did not honor its limit.");
+    require(metasequoia::local_modes::query_quick_phrases("", quick_phrase_database, 10).candidates.empty() &&
+                metasequoia::local_modes::query_quick_phrases("A", quick_phrase_database, 10).candidates.empty() &&
+                metasequoia::local_modes::query_quick_phrases("a1", quick_phrase_database, 10).candidates.empty() &&
+                metasequoia::local_modes::query_quick_phrases("a", quick_phrase_database, 0).candidates.empty(),
+            "Quick-phrase query accepted an invalid prefix or limit.");
+
+    const auto missing_quick_phrases = metasequoia::local_modes::query_quick_phrases(
+        "secret", quick_phrase_directory / "private-missing.db", 10);
+    require(missing_quick_phrases.candidates.empty() && missing_quick_phrases.diagnostic.has_value() &&
+                missing_quick_phrases.diagnostic->find("secret") == std::string::npos &&
+                missing_quick_phrases.diagnostic->find("private-missing") == std::string::npos,
+            "A missing quick-phrase database lacked a privacy-safe diagnostic.");
+
+    const std::filesystem::path corrupt_database = quick_phrase_directory / "private-corrupt.db";
+    {
+        std::ofstream stream(corrupt_database, std::ios::binary);
+        stream << "not a sqlite database";
+    }
+    const auto corrupt_quick_phrases =
+        metasequoia::local_modes::query_quick_phrases("secret", corrupt_database, 10);
+    require(corrupt_quick_phrases.candidates.empty() && corrupt_quick_phrases.diagnostic.has_value() &&
+                corrupt_quick_phrases.diagnostic->find("secret") == std::string::npos &&
+                corrupt_quick_phrases.diagnostic->find("private-corrupt") == std::string::npos,
+            "A corrupt quick-phrase database lacked a privacy-safe diagnostic.");
+    std::filesystem::remove_all(quick_phrase_directory);
     return 0;
 }
