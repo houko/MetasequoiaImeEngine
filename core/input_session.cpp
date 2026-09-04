@@ -42,21 +42,22 @@ const char *frequency_mode_name(FrequencyAdjustmentMode mode)
 InputSession::InputSession(SchemeType scheme_type, bool quanpin_autocorrect_enabled, bool helpcode_enabled,
                            bool chinese_punctuation_enabled, bool candidate_learning_enabled)
     : engine_(scheme_type), quanpin_autocorrect_enabled_(quanpin_autocorrect_enabled),
-      helpcode_enabled_(helpcode_enabled), chinese_punctuation_enabled_(chinese_punctuation_enabled),
+      quanpin_helpcode_enabled_(helpcode_enabled), shuangpin_helpcode_enabled_(helpcode_enabled),
+      chinese_punctuation_enabled_(chinese_punctuation_enabled),
       candidate_learning_enabled_(candidate_learning_enabled),
       shuangpin_profile_(GetXiaoheShuangpinProfile())
 {
     engine_.set_quanpin_autocorrect_enabled(quanpin_autocorrect_enabled_);
-    engine_.set_quanpin_helpcode_enabled(helpcode_enabled_);
-    engine_.set_shuangpin_helpcode_enabled(helpcode_enabled_);
+    engine_.set_quanpin_helpcode_enabled(quanpin_helpcode_enabled_);
+    engine_.set_shuangpin_helpcode_enabled(shuangpin_helpcode_enabled_);
 }
 
 InputSession::InputSession(SchemeType scheme_type, const ShuangpinProfile &shuangpin_profile)
     : engine_(scheme_type, shuangpin_profile), shuangpin_profile_(shuangpin_profile)
 {
     engine_.set_quanpin_autocorrect_enabled(quanpin_autocorrect_enabled_);
-    engine_.set_quanpin_helpcode_enabled(helpcode_enabled_);
-    engine_.set_shuangpin_helpcode_enabled(helpcode_enabled_);
+    engine_.set_quanpin_helpcode_enabled(quanpin_helpcode_enabled_);
+    engine_.set_shuangpin_helpcode_enabled(shuangpin_helpcode_enabled_);
 }
 
 KeyResult InputSession::handle_character(char character, bool shift_only)
@@ -147,7 +148,8 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
 
     const bool lowercase_letter = character >= 'a' && character <= 'z';
     const bool active_helpcode = character >= 'A' && character <= 'Z' && has_composition() &&
-                                 (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin);
+                                 ((scheme() == SchemeType::Quanpin && quanpin_helpcode_enabled_) ||
+                                  (scheme() == SchemeType::Shuangpin && shuangpin_helpcode_enabled_));
     if (!lowercase_letter && !active_helpcode && character != '\'')
     {
         return {};
@@ -354,11 +356,13 @@ KeyResult InputSession::select_candidate_edge(std::size_t index, CandidateEdge e
 
 void InputSession::set_shuangpin_helpcode_enabled(bool enabled)
 {
+    shuangpin_helpcode_enabled_ = enabled;
     engine_.set_shuangpin_helpcode_enabled(enabled);
 }
 
 void InputSession::set_quanpin_helpcode_enabled(bool enabled)
 {
+    quanpin_helpcode_enabled_ = enabled;
     engine_.set_quanpin_helpcode_enabled(enabled);
 }
 
@@ -553,7 +557,15 @@ bool InputSession::quanpin_autocorrect_enabled() const
 
 bool InputSession::helpcode_enabled() const
 {
-    return helpcode_enabled_;
+    if (scheme() == SchemeType::Quanpin)
+    {
+        return quanpin_helpcode_enabled_;
+    }
+    if (scheme() == SchemeType::Shuangpin)
+    {
+        return shuangpin_helpcode_enabled_;
+    }
+    return false;
 }
 
 bool InputSession::chinese_punctuation_enabled() const

@@ -213,6 +213,9 @@ int run_test()
                 "The requested pinyin autocorrect setting was not retained.");
         metasequoia::InputSession no_helpcode_session(SchemeType::Quanpin, true, false);
         require(!no_helpcode_session.helpcode_enabled(), "The requested helpcode setting was not retained.");
+        type(no_helpcode_session, "ni");
+        require(!no_helpcode_session.handle_character('H').handled && no_helpcode_session.preedit() == "ni",
+                "A constructor-disabled Quanpin helpcode key was swallowed.");
 
         metasequoia::InputSession shuangpin_session(SchemeType::Shuangpin);
         require(shuangpin_session.scheme_type() == SchemeType::Shuangpin,
@@ -412,7 +415,12 @@ int run_test()
         type(quanpin_helpcode, "nihC");
         metasequoia::InputSession quanpin_without_helpcode(SchemeType::Quanpin);
         quanpin_without_helpcode.set_quanpin_helpcode_enabled(false);
-        type(quanpin_without_helpcode, "nihC");
+        require(!quanpin_without_helpcode.helpcode_enabled(),
+                "Disabling Quanpin helpcode was not reflected by the session.");
+        type(quanpin_without_helpcode, "nih");
+        require(!quanpin_without_helpcode.handle_character('C').handled &&
+                    quanpin_without_helpcode.preedit() == "nih",
+                "A setter-disabled Quanpin helpcode key was swallowed.");
         require(same_candidate_words(quanpin_helpcode, quanpin_without_helpcode),
                 "Quanpin helpcode changed candidates after an incomplete base spelling.");
 
@@ -424,6 +432,15 @@ int run_test()
                     !shuangpin_helpcode.candidates().empty() &&
                     shuangpin_helpcode.candidates().front().word == "拟好",
                 "Shuangpin helpcode or exposed segmentation did not match the complete base spelling.");
+
+        metasequoia::InputSession shuangpin_without_helpcode(SchemeType::Shuangpin);
+        shuangpin_without_helpcode.set_shuangpin_helpcode_enabled(false);
+        require(!shuangpin_without_helpcode.helpcode_enabled(),
+                "Disabling Shuangpin helpcode was not reflected by the session.");
+        type(shuangpin_without_helpcode, "ni");
+        require(!shuangpin_without_helpcode.handle_character('H').handled &&
+                    shuangpin_without_helpcode.preedit() == "ni",
+                "A setter-disabled Shuangpin helpcode key was swallowed.");
 
         require(!session.handle_character('1').handled, "A digit was swallowed instead of passed through.");
         require(!session.handle_command(metasequoia::Command::Backspace).handled,

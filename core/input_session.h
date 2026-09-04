@@ -162,7 +162,8 @@ class InputSession
 
     ImeSession engine_;
     bool quanpin_autocorrect_enabled_ = true;
-    bool helpcode_enabled_ = true;
+    bool quanpin_helpcode_enabled_ = true;
+    bool shuangpin_helpcode_enabled_ = true;
     bool chinese_punctuation_enabled_ = true;
     bool candidate_learning_enabled_ = true;
     bool next_double_quote_is_opening_ = true;
