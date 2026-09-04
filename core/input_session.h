@@ -2,10 +2,12 @@
 
 #include "ime_session.h"
 #include "../local_modes/date_time_query.h"
+#include "../english/english_dictionary.h"
 #include "word_item.h"
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -78,6 +80,12 @@ struct LocalModeOptions
     bool temporary_japanese = true;
 };
 
+struct EnglishInputOptions
+{
+    bool mixed_candidates = false;
+    std::size_t minimum_prefix = 2;
+};
+
 // Platform-neutral composition session shared by the native frontends. It owns an ImeSession and
 // applies the key-handling and commit policy that each frontend would otherwise reimplement, so a
 // frontend only has to translate platform key events into these calls.
@@ -111,6 +119,10 @@ class InputSession
     const FrequencyAdjustmentOptions &frequency_adjustment() const;
     void set_local_mode_options(LocalModeOptions options);
     const LocalModeOptions &local_mode_options() const;
+    bool set_english_input_options(EnglishInputOptions options);
+    const EnglishInputOptions &english_input_options() const;
+    void set_dedicated_english_mode(bool enabled);
+    bool dedicated_english_mode() const;
     LocalInputMode local_input_mode() const;
     void set_local_date_time_provider(std::function<local_modes::LocalDateTime()> provider);
 
@@ -134,6 +146,9 @@ class InputSession
     KeyResult commit(std::size_t index);
     KeyResult handle_local_character(char character);
     std::optional<std::string> update_local_candidates();
+    void update_mixed_english_candidates();
+    void update_dedicated_english_candidates();
+    EnglishDictionary &english_dictionary();
     void reset_composition();
     std::optional<std::string> learn_candidate(std::size_t index);
 
@@ -148,6 +163,12 @@ class InputSession
     FrequencyAdjustmentOptions frequency_adjustment_;
     bool frequency_adjustment_configured_ = false;
     LocalModeOptions local_mode_options_;
+    EnglishInputOptions english_input_options_;
+    std::unique_ptr<EnglishDictionary> english_dictionary_;
+    bool dedicated_english_mode_ = false;
+    std::string dedicated_english_preedit_;
+    std::vector<WordItem> dedicated_english_candidates_;
+    std::vector<WordItem> mixed_english_candidates_;
     LocalInputMode local_input_mode_ = LocalInputMode::None;
     std::string local_preedit_;
     std::vector<WordItem> local_candidates_;

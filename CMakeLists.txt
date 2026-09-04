@@ -123,8 +123,18 @@ if(BUILD_TESTING)
     add_test(NAME engine_smoke COMMAND test_engine_smoke)
 
     add_executable(test_input_session tests/src/test_input_session.cpp)
+    target_compile_definitions(test_input_session PRIVATE METASEQUOIA_SKIP_FREQUENCY_TESTS)
     target_link_libraries(test_input_session PRIVATE MetasequoiaIme::Engine)
     add_test(NAME input_session COMMAND test_input_session)
+
+    add_executable(test_frequency_input_session tests/src/test_input_session.cpp)
+    target_compile_definitions(test_frequency_input_session PRIVATE METASEQUOIA_FREQUENCY_TESTS_ONLY)
+    target_link_libraries(test_frequency_input_session PRIVATE MetasequoiaIme::Engine)
+    add_test(NAME frequency_input_session COMMAND test_frequency_input_session)
+
+    add_executable(test_english_input_session tests/src/test_english_input_session.cpp)
+    target_link_libraries(test_english_input_session PRIVATE MetasequoiaIme::Engine)
+    add_test(NAME english_input_session COMMAND test_english_input_session)
 
     add_executable(test_local_modes tests/src/test_local_modes.cpp)
     target_link_libraries(test_local_modes PRIVATE MetasequoiaIme::Engine)
