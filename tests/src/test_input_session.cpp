@@ -117,6 +117,17 @@ int main()
         require(cancel.handled && !cancel.commit.has_value() && !session.has_composition(),
                 "Cancel did not discard the composition.");
 
+        type(session, "nihao");
+        session.switch_scheme(SchemeType::Wubi);
+        require(session.scheme() == SchemeType::Wubi, "Switching to Wubi did not update the active scheme.");
+        require(!session.has_composition() && session.candidates().empty(),
+                "Switching schemes did not discard the old composition.");
+
+        session.switch_scheme(SchemeType::JapaneseRomaji);
+        require(session.scheme() == SchemeType::JapaneseRomaji,
+                "Switching without a composition did not update the active scheme.");
+        session.switch_scheme(SchemeType::Quanpin);
+
         require(!session.handle_character('1').handled, "A digit was swallowed instead of passed through.");
         require(!session.handle_command(metasequoia::Command::Backspace).handled,
                 "Backspace was swallowed while no composition was active.");

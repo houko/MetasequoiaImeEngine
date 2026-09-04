@@ -72,6 +72,16 @@ KeyResult InputSession::select_candidate(const std::string &candidate)
     return commit(static_cast<std::size_t>(std::distance(candidates().begin(), found)));
 }
 
+void InputSession::switch_scheme(SchemeType scheme_type)
+{
+    engine_.switch_scheme(scheme_type);
+}
+
+SchemeType InputSession::scheme() const
+{
+    return engine_.current_scheme_type();
+}
+
 bool InputSession::has_composition() const
 {
     return !preedit().empty();
