@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -64,6 +65,17 @@ void require(bool condition, const char *message)
     }
 }
 
+void write_file(const std::filesystem::path &path, const std::string &contents)
+{
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream stream(path);
+    stream << contents;
+    if (!stream)
+    {
+        throw std::runtime_error("Failed to prepare an input-session helpcode fixture.");
+    }
+}
+
 std::size_t candidate_index(const metasequoia::InputSession &session, const std::string &word)
 {
     const auto found = std::find_if(session.candidates().begin(), session.candidates().end(),
@@ -78,6 +90,18 @@ std::size_t candidate_index(const metasequoia::InputSession &session, const std:
         throw std::runtime_error(message);
     }
     return static_cast<std::size_t>(std::distance(session.candidates().begin(), found));
+}
+
+bool same_candidate_words(const metasequoia::InputSession &left, const metasequoia::InputSession &right)
+{
+    if (left.candidates().size() != right.candidates().size())
+    {
+        return false;
+    }
+    return std::equal(left.candidates().begin(), left.candidates().end(), right.candidates().begin(),
+                      [](const auto &left_item, const auto &right_item) {
+                          return left_item.word == right_item.word;
+                      });
 }
 } // namespace
 
@@ -97,6 +121,13 @@ int run_test()
     }
 
     {
+        const std::filesystem::path helpcode_directory = data_directory / "helpcodes";
+        write_file(helpcode_directory / "helpcode.txt", "你=ab\n拟=cd\n好=ef\n");
+        write_file(helpcode_directory / "zrm_helpcode_big_unique.txt", "你=cb\n拟=ad\n好=ef\n");
+        write_file(helpcode_directory / "shouyou2_0_helpcode.txt", "你=ab\n拟=cd\n好=ef\n");
+        write_file(helpcode_directory / "shouyouplus_helpcode.txt", "你=ab\n拟=cd\n好=ef\n");
+        write_file(helpcode_directory / "xiaohe_helpcode.txt", "你=ab\n拟=cd\n好=ef\n");
+
         Database database(data_directory / "msime.db");
         database.execute("CREATE TABLE tbl_2_n(key TEXT, jp TEXT, value TEXT, weight INTEGER)");
         database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '你好', 200)");
@@ -178,6 +209,8 @@ int run_test()
         metasequoia::InputSession session(SchemeType::Quanpin, true, true, true, false);
         type(session, "nihao");
         require(session.preedit() == "nihao", "The preedit did not mirror the raw pinyin.");
+        require(session.raw_segmentation() == "ni'hao" && session.normalized_segmentation() == "ni'hao",
+                "Quanpin segmentation was not exposed through the native session API.");
         require(session.has_composition(), "Typing pinyin did not start a composition.");
         require(session.candidates().size() >= 2, "The engine did not return both dictionary candidates.");
 
@@ -293,6 +326,41 @@ int run_test()
         require(session.scheme() == SchemeType::JapaneseRomaji,
                 "Switching without a composition did not update the active scheme.");
         session.switch_scheme(SchemeType::Quanpin);
+
+        const std::vector<std::string> supported_helpcode_schemas{
+            "lantian", "ziranma", "shouyou2_0", "shouyouplus", "xiaohe"};
+        for (const std::string &schema : supported_helpcode_schemas)
+        {
+            require(metasequoia::InputSession::is_supported_helpcode_schema(schema) &&
+                        metasequoia::InputSession::select_helpcode_schema(schema),
+                    "A Windows-supported helpcode schema was rejected.");
+        }
+        require(!metasequoia::InputSession::is_supported_helpcode_schema("unknown") &&
+                    !metasequoia::InputSession::select_helpcode_schema("unknown"),
+                "An unknown helpcode schema was accepted.");
+
+        metasequoia::InputSession quanpin_helpcode(SchemeType::Quanpin);
+        quanpin_helpcode.set_quanpin_helpcode_enabled(true);
+        require(metasequoia::InputSession::select_helpcode_schema("lantian"),
+                "The Lantian helpcode fixture was not selected.");
+        type(quanpin_helpcode, "nihaoC");
+        require(!quanpin_helpcode.candidates().empty() && quanpin_helpcode.candidates().front().word == "拟好",
+                "Quanpin helpcode did not reorder candidates after a complete spelling.");
+        quanpin_helpcode.handle_command(metasequoia::Command::Cancel);
+        type(quanpin_helpcode, "nihC");
+        metasequoia::InputSession quanpin_without_helpcode(SchemeType::Quanpin);
+        type(quanpin_without_helpcode, "nihC");
+        require(same_candidate_words(quanpin_helpcode, quanpin_without_helpcode),
+                "Quanpin helpcode changed candidates after an incomplete base spelling.");
+
+        metasequoia::InputSession shuangpin_helpcode(SchemeType::Shuangpin);
+        shuangpin_helpcode.set_shuangpin_helpcode_enabled(true);
+        type(shuangpin_helpcode, "nihcc");
+        require(shuangpin_helpcode.raw_segmentation() == "ni'hc'c" &&
+                    shuangpin_helpcode.normalized_segmentation() == "ni'hao'c" &&
+                    !shuangpin_helpcode.candidates().empty() &&
+                    shuangpin_helpcode.candidates().front().word == "拟好",
+                "Shuangpin helpcode or exposed segmentation did not match the complete base spelling.");
 
         require(!session.handle_character('1').handled, "A digit was swallowed instead of passed through.");
         require(!session.handle_command(metasequoia::Command::Backspace).handled,
