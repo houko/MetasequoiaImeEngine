@@ -51,6 +51,10 @@ class InputSession
     KeyResult select_candidate(std::size_t index);
     KeyResult select_candidate(const std::string &candidate);
     KeyResult select_candidate_edge(std::size_t index, CandidateEdge edge);
+    void set_shuangpin_helpcode_enabled(bool enabled);
+    void set_quanpin_helpcode_enabled(bool enabled);
+    static bool is_supported_helpcode_schema(const std::string &schema);
+    static bool select_helpcode_schema(const std::string &schema);
 
     // Switching schemes discards the current composition. A frontend that promises to preserve
     // typed text must commit it before calling this method.
@@ -59,6 +63,8 @@ class InputSession
 
     bool has_composition() const;
     const std::string &preedit() const;
+    const std::string &raw_segmentation() const;
+    const std::string &normalized_segmentation() const;
     const std::vector<WordItem> &candidates() const;
 
   private:

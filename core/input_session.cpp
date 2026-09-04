@@ -93,6 +93,26 @@ KeyResult InputSession::select_candidate_edge(std::size_t index, CandidateEdge e
     return {true, std::move(character)};
 }
 
+void InputSession::set_shuangpin_helpcode_enabled(bool enabled)
+{
+    engine_.set_shuangpin_helpcode_enabled(enabled);
+}
+
+void InputSession::set_quanpin_helpcode_enabled(bool enabled)
+{
+    engine_.set_quanpin_helpcode_enabled(enabled);
+}
+
+bool InputSession::is_supported_helpcode_schema(const std::string &schema)
+{
+    return HelpcodeUtils::is_supported_helpcode_schema(schema);
+}
+
+bool InputSession::select_helpcode_schema(const std::string &schema)
+{
+    return HelpcodeUtils::select_helpcode_schema(schema);
+}
+
 void InputSession::switch_scheme(SchemeType scheme_type)
 {
     engine_.switch_scheme(scheme_type);
@@ -111,6 +131,16 @@ bool InputSession::has_composition() const
 const std::string &InputSession::preedit() const
 {
     return engine_.get_preedit();
+}
+
+const std::string &InputSession::raw_segmentation() const
+{
+    return engine_.get_request().raw_segmentation;
+}
+
+const std::string &InputSession::normalized_segmentation() const
+{
+    return engine_.get_request().normalized_segmentation;
 }
 
 const std::vector<WordItem> &InputSession::candidates() const
