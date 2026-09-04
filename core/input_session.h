@@ -26,12 +26,29 @@ struct KeyResult
 {
     bool handled = false;
     std::optional<std::string> commit;
+    std::optional<std::string> diagnostic;
 };
 
 enum class CandidateEdge
 {
     FirstHan,
     LastHan,
+};
+
+enum class FrequencyAdjustmentMode
+{
+    Disabled,
+    Pin,
+    Halve,
+    Linear,
+    Promote,
+};
+
+struct FrequencyAdjustmentOptions
+{
+    FrequencyAdjustmentMode mode = FrequencyAdjustmentMode::Disabled;
+    int trigger_count = 1;
+    int linear_step = 1;
 };
 
 // Platform-neutral composition session shared by the native frontends. It owns an ImeSession and
@@ -55,6 +72,8 @@ class InputSession
     void set_quanpin_helpcode_enabled(bool enabled);
     static bool is_supported_helpcode_schema(const std::string &schema);
     static bool select_helpcode_schema(const std::string &schema);
+    bool set_frequency_adjustment(FrequencyAdjustmentOptions options);
+    const FrequencyAdjustmentOptions &frequency_adjustment() const;
 
     // Switching schemes discards the current composition. A frontend that promises to preserve
     // typed text must commit it before calling this method.
@@ -69,7 +88,9 @@ class InputSession
 
   private:
     KeyResult commit(std::size_t index);
+    std::optional<std::string> learn_candidate(std::size_t index);
 
     ImeSession engine_;
+    FrequencyAdjustmentOptions frequency_adjustment_;
 };
 } // namespace metasequoia

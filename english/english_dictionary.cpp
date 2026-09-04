@@ -203,7 +203,7 @@ void EnglishDictionary::load_custom_translations()
 bool EnglishDictionary::ensure_schema(const std::string &db_path)
 {
     sqlite3 *database = nullptr;
-    if (sqlite3_open_v2(db_path.c_str(), &database, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK)
+    if (sqlite3_open_v2(db_path.c_str(), &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK)
     {
         if (database != nullptr)
             sqlite3_close(database);
