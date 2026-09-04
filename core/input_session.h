@@ -57,6 +57,11 @@ class InputSession
     bool helpcode_enabled() const;
     bool chinese_punctuation_enabled() const;
     bool candidate_learning_enabled() const;
+    // Switching schemes discards the current composition. A frontend that promises to preserve
+    // typed text must commit it before calling this method.
+    void switch_scheme(SchemeType scheme_type);
+    SchemeType scheme() const;
+
     bool has_composition() const;
     const std::string &preedit() const;
     const std::vector<WordItem> &candidates() const;
