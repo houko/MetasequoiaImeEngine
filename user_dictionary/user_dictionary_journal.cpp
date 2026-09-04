@@ -10,6 +10,7 @@
 #include <limits>
 #include <mutex>
 #include <numeric>
+#include "../core/data_path.h"
 #include "../english/english_dictionary.h"
 
 namespace user_dictionary
@@ -317,27 +318,33 @@ bool apply_english(sqlite3 *db, const std::string &key, const std::string &value
 
 std::string default_user_db_path()
 {
-    char *local_app_data = nullptr;
-    size_t length = 0;
-    const errno_t error = _dupenv_s(&local_app_data, &length, "LOCALAPPDATA");
-    const std::string base = error == 0 && local_app_data != nullptr ? local_app_data : "";
-    free(local_app_data);
-    return base + "\\metasequoiaime\\msime_user.db";
+    return metasequoia::path_to_utf8(metasequoia::data_file_path("msime_user.db"));
 }
 
 namespace
 {
+struct PersistentDefaultUserDatabase
+{
+    std::mutex mutex;
+    Db database;
+};
+
+PersistentDefaultUserDatabase &persistent_default_user_database_state()
+{
+    static PersistentDefaultUserDatabase state;
+    return state;
+}
+
 sqlite3 *persistent_default_user_database()
 {
-    static std::mutex mutex;
-    static Db database;
-    std::lock_guard lock(mutex);
-    if (!database)
+    PersistentDefaultUserDatabase &state = persistent_default_user_database_state();
+    std::lock_guard lock(state.mutex);
+    if (!state.database)
     {
-        database = open_database(default_user_db_path(), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-        if (database && !ensure_schema(database.get())) database.reset();
+        state.database = open_database(default_user_db_path(), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+        if (state.database && !ensure_schema(state.database.get())) state.database.reset();
     }
-    return database.get();
+    return state.database.get();
 }
 
 class UserDatabase
@@ -364,6 +371,13 @@ private:
     sqlite3 *db_ = nullptr;
 };
 } // namespace
+
+void close_default_user_database()
+{
+    PersistentDefaultUserDatabase &state = persistent_default_user_database_state();
+    std::lock_guard lock(state.mutex);
+    state.database.reset();
+}
 
 bool ensure_user_database(const std::string &user_db_path)
 {
