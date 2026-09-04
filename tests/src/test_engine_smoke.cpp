@@ -171,7 +171,11 @@ int run_test()
         metasequoia::path_to_utf8(english_database));
     if (!successful_replay.error.empty() || successful_replay.applied != 2)
     {
-        throw std::runtime_error("Replay did not apply the Pinyin and attached English operations.");
+        throw std::runtime_error(
+            "Replay did not apply the Pinyin and attached English operations: error=" +
+            successful_replay.error + ", applied=" + std::to_string(successful_replay.applied) +
+            ", failed=" + std::to_string(successful_replay.failed) +
+            ", skipped=" + std::to_string(successful_replay.skipped));
     }
     {
         Database english(english_database);
