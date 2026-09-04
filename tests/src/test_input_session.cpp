@@ -582,6 +582,90 @@ int run_test()
             "An out-of-range frequency linear step was accepted.");
     user_dictionary::close_default_user_database();
 
+    metasequoia::InputSession unicode_session(SchemeType::Quanpin);
+    require(unicode_session.handle_character('U', true).handled &&
+                unicode_session.local_input_mode() == metasequoia::LocalInputMode::Unicode &&
+                unicode_session.preedit() == "U" && unicode_session.candidates().empty(),
+            "Shift+U did not enter an empty Unicode composition.");
+    require(unicode_session.handle_character('g').handled && unicode_session.preedit() == "U" &&
+                unicode_session.candidates().empty(),
+            "Unicode mode accepted or forwarded a non-hexadecimal character.");
+    for (const char character : std::string("4e00"))
+    {
+        require(unicode_session.handle_character(character).handled,
+                "Unicode mode rejected a hexadecimal character.");
+    }
+    require(unicode_session.preedit() == "U4e00" && unicode_session.candidates().size() == 1 &&
+                unicode_session.candidates().front().word == "一" &&
+                unicode_session.candidates().front().pinyin == "U+4E00" &&
+                unicode_session.candidates().front().source == CandidateSource::Generated,
+            "Unicode mode did not produce the Windows-compatible BMP candidate.");
+    const auto unicode_commit = unicode_session.select_candidate(0);
+    require(unicode_commit.handled && unicode_commit.commit == "一" && !unicode_session.has_composition() &&
+                unicode_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing a Unicode candidate did not leave the local mode.");
+
+    require(unicode_session.handle_character('U', true).handled && unicode_session.handle_character('+').handled,
+            "Unicode mode rejected its optional plus prefix.");
+    for (const char character : std::string("1f600"))
+    {
+        require(unicode_session.handle_character(character).handled,
+                "Unicode mode rejected a supplementary-plane hexadecimal character.");
+    }
+    require(unicode_session.preedit() == "U+1f600" && unicode_session.candidates().size() == 1 &&
+                unicode_session.candidates().front().word == "😀",
+            "Unicode mode did not produce a supplementary-plane scalar.");
+    require(unicode_session.handle_command(metasequoia::Command::Cancel).handled && !unicode_session.has_composition(),
+            "Cancel did not leave Unicode mode.");
+
+    const auto require_invalid_unicode = [&](const std::string &hex) {
+        require(unicode_session.handle_character('U', true).handled,
+                "Unicode mode could not be re-entered for invalid-scalar coverage.");
+        for (const char character : hex)
+        {
+            require(unicode_session.handle_character(character).handled,
+                    "Unicode mode rejected an invalid scalar's hexadecimal spelling.");
+        }
+        require(unicode_session.candidates().empty(), "Unicode mode produced an invalid scalar candidate.");
+        require(unicode_session.handle_command(metasequoia::Command::Cancel).handled,
+                "Unicode invalid-scalar fixture could not be cancelled.");
+    };
+    require_invalid_unicode("d800");
+    require_invalid_unicode("110000");
+    require_invalid_unicode("0000001");
+
+    require(unicode_session.handle_character('U', true).handled,
+            "Unicode prefix was not handled before Backspace coverage.");
+    require(unicode_session.handle_command(metasequoia::Command::Backspace).handled &&
+                !unicode_session.has_composition() &&
+                unicode_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Backspace on a bare Unicode prefix did not leave the mode.");
+
+    metasequoia::InputSession plain_uppercase(SchemeType::Quanpin);
+    require(plain_uppercase.handle_character('U').handled &&
+                plain_uppercase.local_input_mode() == metasequoia::LocalInputMode::None,
+            "An uppercase character without Shift-only entered Unicode mode.");
+    metasequoia::LocalModeOptions disabled_local_modes;
+    disabled_local_modes.unicode = false;
+    metasequoia::InputSession disabled_unicode(SchemeType::Quanpin);
+    disabled_unicode.set_local_mode_options(disabled_local_modes);
+    require(disabled_unicode.handle_character('U', true).handled &&
+                disabled_unicode.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled Unicode mode still intercepted Shift+U.");
+
+    metasequoia::InputSession wubi_unicode(SchemeType::Wubi);
+    require(wubi_unicode.handle_character('U', true).handled &&
+                wubi_unicode.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Unicode mode started outside a pinyin scheme.");
+    metasequoia::InputSession switch_clears_unicode(SchemeType::Shuangpin);
+    require(switch_clears_unicode.handle_character('U', true).handled &&
+                switch_clears_unicode.local_input_mode() == metasequoia::LocalInputMode::Unicode,
+            "Shuangpin could not enter Unicode mode.");
+    switch_clears_unicode.switch_scheme(SchemeType::Quanpin);
+    require(!switch_clears_unicode.has_composition() &&
+                switch_clears_unicode.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Switching schemes did not clear Unicode mode.");
+
     std::filesystem::remove_all(data_directory);
     return 0;
 }
