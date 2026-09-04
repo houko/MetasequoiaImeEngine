@@ -1,6 +1,7 @@
 #include "../../core/data_path.h"
 #include "../../core/input_session.h"
 #include "../../user_dictionary/user_dictionary_journal.h"
+#include "test_directory_cleanup.h"
 
 #include <sqlite3.h>
 
@@ -148,6 +149,7 @@ int main()
     const auto suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("metasequoia-mixed-expression-" + suffix);
+    metasequoia::test::ScopedDataDirectoryCleanup cleanup(root);
 
     const std::filesystem::path complete = root / "complete";
     prepare_main_database(complete);
@@ -289,6 +291,5 @@ int main()
             "Mixed candidate sources polluted the local Chinese frequency rank calculation.");
     user_dictionary::close_default_user_database();
 
-    std::filesystem::remove_all(root);
     return 0;
 }

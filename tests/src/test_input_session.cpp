@@ -1,6 +1,7 @@
 #include "../../core/input_session.h"
 #include "../../core/data_path.h"
 #include "../../user_dictionary/user_dictionary_journal.h"
+#include "test_directory_cleanup.h"
 
 #include <sqlite3.h>
 
@@ -177,6 +178,7 @@ int run_test()
     const auto unique_suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const std::filesystem::path data_directory =
         std::filesystem::temp_directory_path() / std::filesystem::u8path("metasequoia-session-词库-" + unique_suffix);
+    metasequoia::test::ScopedDataDirectoryCleanup cleanup(data_directory);
     std::filesystem::create_directories(data_directory);
     set_data_directory(data_directory);
 
@@ -914,7 +916,6 @@ int run_test()
             "A missing Emoji database did not report a non-blocking diagnostic.");
 #endif
 
-    std::filesystem::remove_all(data_directory);
     return 0;
 }
 

@@ -1,5 +1,6 @@
 #include "../../core/data_path.h"
 #include "../../core/input_session.h"
+#include "test_directory_cleanup.h"
 
 #include <sqlite3.h>
 
@@ -69,6 +70,7 @@ int main()
     const auto suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const auto data_directory =
         std::filesystem::temp_directory_path() / ("metasequoia-temporary-mode-" + suffix);
+    metasequoia::test::ScopedDataDirectoryCleanup cleanup(data_directory);
     std::filesystem::create_directories(data_directory);
 #ifdef _WIN32
     if (_wputenv_s(L"METASEQUOIA_IME_DATA_DIR", data_directory.c_str()) != 0)
@@ -241,6 +243,5 @@ int main()
                 disabled.local_input_mode() == metasequoia::LocalInputMode::None,
             "Disabled temporary Japanese swallowed Shift+R.");
 
-    std::filesystem::remove_all(data_directory);
     return 0;
 }

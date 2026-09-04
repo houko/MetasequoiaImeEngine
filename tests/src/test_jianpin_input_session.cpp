@@ -2,6 +2,7 @@
 #include "../../core/input_session.h"
 #include "../../local_modes/jianpin_query.h"
 #include "../../user_dictionary/user_dictionary_journal.h"
+#include "test_directory_cleanup.h"
 
 #include <sqlite3.h>
 
@@ -120,6 +121,7 @@ int main()
     const auto suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("metasequoia-jianpin-" + suffix);
+    metasequoia::test::ScopedDataDirectoryCleanup cleanup(root);
     const std::filesystem::path complete = root / "complete";
     prepare_database(complete);
 
@@ -235,6 +237,5 @@ int main()
             "Super-jianpin frequency learning did not persist through its canonical ranking key.");
     user_dictionary::close_default_user_database();
 
-    std::filesystem::remove_all(root);
     return 0;
 }

@@ -3,11 +3,13 @@
 #include "../../english/english_dictionary.h"
 #include "../../japanese/romaji_converter.h"
 #include "../../user_dictionary/user_dictionary_journal.h"
+#include "test_directory_cleanup.h"
 
 #include <sqlite3.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
@@ -76,7 +78,7 @@ class Database
 };
 } // namespace
 
-int main()
+int run_test()
 {
     if (japanese::HiraganaToKatakana("かな") != "カナ" || japanese::HiraganaToRomaji("カナ") != "kana")
     {
@@ -85,6 +87,7 @@ int main()
 
     const auto unique_suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const std::filesystem::path data_directory = std::filesystem::temp_directory_path() / std::filesystem::u8path("metasequoia-engine-词库-" + unique_suffix);
+    metasequoia::test::ScopedDataDirectoryCleanup cleanup(data_directory);
     std::filesystem::create_directories(data_directory);
 #ifdef _WIN32
     if (_wputenv_s(L"METASEQUOIA_IME_DATA_DIR", data_directory.c_str()) != 0)
@@ -216,6 +219,18 @@ int main()
         throw std::runtime_error("Replay reported success after the journal cursor failed.");
     }
 
-    std::filesystem::remove_all(data_directory);
     return 0;
+}
+
+int main()
+{
+    try
+    {
+        return run_test();
+    }
+    catch (const std::exception &exception)
+    {
+        std::fprintf(stderr, "%s\n", exception.what());
+        return 1;
+    }
 }

@@ -1,5 +1,6 @@
 #include "../../core/data_path.h"
 #include "../../core/input_session.h"
+#include "test_directory_cleanup.h"
 
 #include <sqlite3.h>
 
@@ -114,6 +115,7 @@ int main()
     const auto suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("metasequoia-english-session-" + suffix);
+    metasequoia::test::ScopedDataDirectoryCleanup cleanup(root);
     const std::filesystem::path english_mode_directory = root / "english-modes";
     prepare_main_database(english_mode_directory, true);
     {
@@ -236,6 +238,5 @@ int main()
                 !std::filesystem::exists(missing_directory / "english.db"),
             "A missing English database suppressed Chinese candidates or was created by a read-only query.");
 
-    std::filesystem::remove_all(root);
     return 0;
 }
