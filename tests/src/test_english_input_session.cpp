@@ -139,10 +139,11 @@ int main()
     require(mixed.set_english_input_options(mixed_options), "Valid mixed-English options were rejected.");
     type(mixed, "ni");
     require(mixed.candidates().size() == 5 && mixed.candidates()[0].word == "你" &&
-                mixed.candidates()[1].word == "倪" && mixed.candidates()[2].word == "Ni" &&
-                mixed.candidates()[2].source == CandidateSource::EnglishDictionary &&
-                mixed.candidates()[3].word == "Ninja" && mixed.candidates()[4].word == "Nimbus",
-            "Mixed English candidates were not deduplicated and appended after local Chinese candidates.");
+                mixed.candidates()[1].word == "Ni" &&
+                mixed.candidates()[1].source == CandidateSource::EnglishDictionary &&
+                mixed.candidates()[2].word == "倪" && mixed.candidates()[3].word == "Ninja" &&
+                mixed.candidates()[4].word == "Nimbus",
+            "Mixed English candidates did not occupy the Windows-compatible slot after the leading Chinese candidate.");
 
     metasequoia::InputSession threshold(SchemeType::Quanpin);
     mixed_options.minimum_prefix = 3;
