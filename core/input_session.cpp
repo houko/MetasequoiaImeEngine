@@ -145,7 +145,10 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
         return {true, std::nullopt, std::nullopt};
     }
 
-    if ((character < 'a' || character > 'z') && character != '\'')
+    const bool lowercase_letter = character >= 'a' && character <= 'z';
+    const bool active_helpcode = character >= 'A' && character <= 'Z' && has_composition() &&
+                                 (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin);
+    if (!lowercase_letter && !active_helpcode && character != '\'')
     {
         return {};
     }
@@ -233,23 +236,15 @@ KeyResult InputSession::handle_punctuation(char character)
         return {};
     }
 
-    std::string text;
-    std::optional<std::string> diagnostic;
+    KeyResult result{true, std::nullopt, std::nullopt};
     if (has_composition())
     {
-        if (candidates().empty())
-        {
-            text = preedit();
-        }
-        else
-        {
-            text = candidates().front().word;
-            diagnostic = learn_candidate(0);
-        }
-        engine_.reset();
+        result = commit(0);
     }
+    std::string text = result.commit.value_or("");
     text += punctuation;
-    return {true, std::move(text), std::move(diagnostic)};
+    result.commit = std::move(text);
+    return result;
 }
 
 KeyResult InputSession::handle_command(Command command)
@@ -548,7 +543,7 @@ const std::vector<WordItem> &InputSession::candidates() const
 
 SchemeType InputSession::scheme_type() const
 {
-    return engine_.current_scheme_type();
+    return scheme();
 }
 
 bool InputSession::quanpin_autocorrect_enabled() const

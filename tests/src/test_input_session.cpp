@@ -256,8 +256,9 @@ int run_test()
         require(!uppercase_session.handle_character('N').handled,
                 "An uppercase letter was swallowed while no composition was active.");
         type(uppercase_session, "ni");
-        require(!uppercase_session.handle_character('H').handled && uppercase_session.preedit() == "ni",
-                "An uppercase letter entered the active pinyin composition.");
+        require(uppercase_session.handle_character('H').handled && uppercase_session.preedit() == "niH",
+                "An uppercase helpcode was rejected from an active pinyin composition.");
+        uppercase_session.handle_command(metasequoia::Command::Cancel);
 
         metasequoia::InputSession duplicate_apostrophe_session;
         type(duplicate_apostrophe_session, "ni");
@@ -410,6 +411,7 @@ int run_test()
         quanpin_helpcode.handle_command(metasequoia::Command::Cancel);
         type(quanpin_helpcode, "nihC");
         metasequoia::InputSession quanpin_without_helpcode(SchemeType::Quanpin);
+        quanpin_without_helpcode.set_quanpin_helpcode_enabled(false);
         type(quanpin_without_helpcode, "nihC");
         require(same_candidate_words(quanpin_helpcode, quanpin_without_helpcode),
                 "Quanpin helpcode changed candidates after an incomplete base spelling.");
@@ -656,21 +658,21 @@ int run_test()
             "Backspace on a bare Unicode prefix did not leave the mode.");
 
     metasequoia::InputSession plain_uppercase(SchemeType::Quanpin);
-    require(plain_uppercase.handle_character('U').handled &&
+    require(!plain_uppercase.handle_character('U').handled && !plain_uppercase.has_composition() &&
                 plain_uppercase.local_input_mode() == metasequoia::LocalInputMode::None,
-            "An uppercase character without Shift-only entered Unicode mode.");
+            "An uppercase character without Shift-only was swallowed.");
     metasequoia::LocalModeOptions disabled_local_modes;
     disabled_local_modes.unicode = false;
     metasequoia::InputSession disabled_unicode(SchemeType::Quanpin);
     disabled_unicode.set_local_mode_options(disabled_local_modes);
-    require(disabled_unicode.handle_character('U', true).handled &&
+    require(!disabled_unicode.handle_character('U', true).handled && !disabled_unicode.has_composition() &&
                 disabled_unicode.local_input_mode() == metasequoia::LocalInputMode::None,
-            "A disabled Unicode mode still intercepted Shift+U.");
+            "A disabled Unicode shortcut swallowed Shift+U.");
 
     metasequoia::InputSession wubi_unicode(SchemeType::Wubi);
-    require(wubi_unicode.handle_character('U', true).handled &&
+    require(!wubi_unicode.handle_character('U', true).handled && !wubi_unicode.has_composition() &&
                 wubi_unicode.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Unicode mode started outside a pinyin scheme.");
+            "Shift+U was swallowed outside a pinyin scheme.");
     metasequoia::InputSession switch_clears_unicode(SchemeType::Shuangpin);
     require(switch_clears_unicode.handle_character('U', true).handled &&
                 switch_clears_unicode.local_input_mode() == metasequoia::LocalInputMode::Unicode,
@@ -719,14 +721,14 @@ int run_test()
     disabled_date_time_options.date_time = false;
     metasequoia::InputSession disabled_date_time(SchemeType::Quanpin);
     disabled_date_time.set_local_mode_options(disabled_date_time_options);
-    require(disabled_date_time.handle_character('T', true).handled &&
+    require(!disabled_date_time.handle_character('T', true).handled && !disabled_date_time.has_composition() &&
                 disabled_date_time.local_input_mode() == metasequoia::LocalInputMode::None,
-            "A disabled date/time mode still intercepted Shift+T.");
+            "A disabled date/time shortcut swallowed Shift+T.");
 
     metasequoia::InputSession wubi_date_time(SchemeType::Wubi);
-    require(wubi_date_time.handle_character('T', true).handled &&
+    require(!wubi_date_time.handle_character('T', true).handled && !wubi_date_time.has_composition() &&
                 wubi_date_time.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Date/time mode started outside a pinyin scheme.");
+            "Shift+T was swallowed outside a pinyin scheme.");
 
     const std::filesystem::path quick_phrase_directory = data_directory / "quick-phrase";
     std::filesystem::create_directories(quick_phrase_directory);
@@ -767,9 +769,10 @@ int run_test()
     disabled_quick_phrase_options.quick_phrase = false;
     metasequoia::InputSession disabled_quick_phrase(SchemeType::Quanpin);
     disabled_quick_phrase.set_local_mode_options(disabled_quick_phrase_options);
-    require(disabled_quick_phrase.handle_character('K', true).handled &&
+    require(!disabled_quick_phrase.handle_character('K', true).handled &&
+                !disabled_quick_phrase.has_composition() &&
                 disabled_quick_phrase.local_input_mode() == metasequoia::LocalInputMode::None,
-            "A disabled quick-phrase mode still intercepted Shift+K.");
+            "A disabled quick-phrase shortcut swallowed Shift+K.");
 
     const std::filesystem::path missing_quick_phrase_directory = data_directory / "quick-phrase-missing";
     std::filesystem::create_directories(missing_quick_phrase_directory);
@@ -856,13 +859,12 @@ int run_test()
     disabled_expressive_options.kaomoji = false;
     metasequoia::InputSession disabled_expressive(SchemeType::Quanpin);
     disabled_expressive.set_local_mode_options(disabled_expressive_options);
-    require(disabled_expressive.handle_character('E', true).handled &&
-                disabled_expressive.local_input_mode() == metasequoia::LocalInputMode::None &&
-                disabled_expressive.handle_command(metasequoia::Command::Cancel).handled,
-            "A disabled Emoji mode still intercepted Shift+E.");
-    require(disabled_expressive.handle_character('M', true).handled &&
+    require(!disabled_expressive.handle_character('E', true).handled && !disabled_expressive.has_composition() &&
                 disabled_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
-            "A disabled kaomoji mode still intercepted Shift+M.");
+            "A disabled Emoji shortcut swallowed Shift+E.");
+    require(!disabled_expressive.handle_character('M', true).handled && !disabled_expressive.has_composition() &&
+                disabled_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled kaomoji shortcut swallowed Shift+M.");
 
     metasequoia::InputSession disabling_active_expressive(SchemeType::Quanpin);
     require(disabling_active_expressive.handle_character('E', true).handled &&
@@ -876,13 +878,12 @@ int run_test()
             "Disabling an active Emoji mode did not reset it.");
 
     metasequoia::InputSession wubi_expressive(SchemeType::Wubi);
-    require(wubi_expressive.handle_character('E', true).handled &&
+    require(!wubi_expressive.handle_character('E', true).handled && !wubi_expressive.has_composition() &&
                 wubi_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Emoji mode started outside a pinyin scheme.");
-    wubi_expressive.handle_command(metasequoia::Command::Cancel);
-    require(wubi_expressive.handle_character('M', true).handled &&
+            "Shift+E was swallowed outside a pinyin scheme.");
+    require(!wubi_expressive.handle_character('M', true).handled && !wubi_expressive.has_composition() &&
                 wubi_expressive.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Kaomoji mode started outside a pinyin scheme.");
+            "Shift+M was swallowed outside a pinyin scheme.");
 
     const std::filesystem::path missing_expressive_directory = data_directory / "expressive-missing";
     std::filesystem::create_directories(missing_expressive_directory);

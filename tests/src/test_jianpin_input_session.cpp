@@ -210,13 +210,13 @@ int main()
     disabled_options.super_jianpin = false;
     metasequoia::InputSession disabled(SchemeType::Quanpin);
     disabled.set_local_mode_options(disabled_options);
-    require(disabled.handle_character('J', true).handled &&
+    require(!disabled.handle_character('J', true).handled && !disabled.has_composition() &&
                 disabled.local_input_mode() == metasequoia::LocalInputMode::None,
-            "A disabled super-jianpin mode still intercepted Shift+J.");
+            "A disabled super-jianpin shortcut swallowed Shift+J.");
     metasequoia::InputSession wubi(SchemeType::Wubi);
-    require(wubi.handle_character('J', true).handled &&
+    require(!wubi.handle_character('J', true).handled && !wubi.has_composition() &&
                 wubi.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Super-jianpin mode started outside a pinyin scheme.");
+            "Shift+J was swallowed outside a pinyin scheme.");
 
     user_dictionary::close_default_user_database();
     metasequoia::InputSession learning(SchemeType::Quanpin);

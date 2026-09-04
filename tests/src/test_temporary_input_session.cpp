@@ -92,6 +92,12 @@ int main()
                 english.local_input_mode() == metasequoia::LocalInputMode::TemporaryEnglish &&
                 english.preedit() == "Y" && english.candidates().empty(),
             "Shift+Y did not enter an empty temporary English composition.");
+    const auto bare_english_punctuation = english.handle_punctuation(',');
+    require(bare_english_punctuation.handled && bare_english_punctuation.commit == "，" &&
+                english.local_input_mode() == metasequoia::LocalInputMode::None && !english.has_composition(),
+            "Engine punctuation committed or retained the bare temporary-English display prefix.");
+    require(english.handle_character('Y', true).handled,
+            "Temporary English could not restart after engine punctuation.");
     type(english, "he");
     require(english.preedit() == "Yhe" && english.candidates().size() == 3 &&
                 english.candidates()[0].word == "he" &&
@@ -158,8 +164,16 @@ int main()
     metasequoia::InputSession japanese(SchemeType::Quanpin);
     require(japanese.handle_character('R', true).handled &&
                 japanese.local_input_mode() == metasequoia::LocalInputMode::TemporaryJapanese &&
-                japanese.preedit() == "R" && japanese.scheme() == SchemeType::Quanpin,
+                japanese.preedit() == "R" && japanese.scheme() == SchemeType::Quanpin &&
+                japanese.scheme_type() == SchemeType::Quanpin,
             "Shift+R did not enter a temporary Japanese session with a visible prefix.");
+    const auto bare_japanese_punctuation = japanese.handle_punctuation(',');
+    require(bare_japanese_punctuation.handled && bare_japanese_punctuation.commit == "，" &&
+                japanese.local_input_mode() == metasequoia::LocalInputMode::None &&
+                japanese.scheme() == SchemeType::Quanpin && japanese.scheme_type() == SchemeType::Quanpin,
+            "Engine punctuation committed the bare R prefix or failed to restore Quanpin.");
+    require(japanese.handle_character('R', true).handled,
+            "Temporary Japanese could not restart after engine punctuation.");
     type(japanese, "ka");
     require(japanese.preedit() == "Rka" && contains(japanese.candidates(), "か"),
             "Temporary Japanese did not reuse Romaji conversion candidates.");
@@ -216,14 +230,12 @@ int main()
     disabled_options.temporary_japanese = false;
     metasequoia::InputSession disabled(SchemeType::Quanpin);
     disabled.set_local_mode_options(disabled_options);
-    require(disabled.handle_character('Y', true).handled &&
+    require(!disabled.handle_character('Y', true).handled && !disabled.has_composition() &&
                 disabled.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Disabled temporary English still intercepted Shift+Y.");
-    require(disabled.handle_command(metasequoia::Command::Cancel).handled,
-            "The disabled Y key did not leave a cancellable normal composition.");
-    require(disabled.handle_character('R', true).handled &&
+            "Disabled temporary English swallowed Shift+Y.");
+    require(!disabled.handle_character('R', true).handled && !disabled.has_composition() &&
                 disabled.local_input_mode() == metasequoia::LocalInputMode::None,
-            "Disabled temporary Japanese still intercepted Shift+R.");
+            "Disabled temporary Japanese swallowed Shift+R.");
 
     std::filesystem::remove_all(data_directory);
     return 0;
