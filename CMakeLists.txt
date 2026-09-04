@@ -35,6 +35,7 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     japanese/japanese_matrix_search.cpp
     japanese/japanese_sentence_decoder.cpp
     japanese/romaji_converter.cpp
+    local_modes/date_time_query.cpp
     local_modes/unicode_query.cpp
     providers/japanese_candidate_provider.cpp
     providers/pinyin_candidate_provider.cpp
@@ -121,4 +122,8 @@ if(BUILD_TESTING)
     add_executable(test_input_session tests/src/test_input_session.cpp)
     target_link_libraries(test_input_session PRIVATE MetasequoiaIme::Engine)
     add_test(NAME input_session COMMAND test_input_session)
+
+    add_executable(test_local_modes tests/src/test_local_modes.cpp)
+    target_link_libraries(test_local_modes PRIVATE MetasequoiaIme::Engine)
+    add_test(NAME local_modes COMMAND test_local_modes)
 endif()

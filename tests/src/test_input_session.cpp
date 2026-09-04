@@ -564,6 +564,54 @@ int main()
                 switch_clears_unicode.local_input_mode() == metasequoia::LocalInputMode::None,
             "Switching schemes did not clear Unicode mode.");
 
+    metasequoia::InputSession date_time_session(SchemeType::Quanpin);
+    date_time_session.set_local_date_time_provider([] {
+        return metasequoia::local_modes::LocalDateTime{2026, 8, 9, 0, 14, 30, 0};
+    });
+    require(date_time_session.handle_character('T', true).handled &&
+                date_time_session.local_input_mode() == metasequoia::LocalInputMode::DateTime &&
+                date_time_session.preedit() == "T" && date_time_session.candidates().empty(),
+            "Shift+T did not enter an empty date/time composition.");
+    type(date_time_session, "rq");
+    require(date_time_session.preedit() == "Trq" && date_time_session.candidates().size() == 17 &&
+                date_time_session.candidates().front().word == "2026年8月9日" &&
+                date_time_session.candidates().back().word == "丙午年六月二十七日",
+            "Date/time mode did not expose deterministic date candidates.");
+    const auto date_commit = date_time_session.select_candidate(0);
+    require(date_commit.handled && date_commit.commit == "2026年8月9日" &&
+                date_time_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing a date candidate did not leave date/time mode.");
+
+    require(date_time_session.handle_character('T', true).handled,
+            "Date/time mode could not be re-entered for incomplete-input coverage.");
+    type(date_time_session, "r");
+    require(date_time_session.candidates().empty(), "An incomplete date keyword produced candidates.");
+    const std::string incomplete_date_preedit = date_time_session.preedit();
+    require(date_time_session.handle_character('1').handled &&
+                date_time_session.preedit() == incomplete_date_preedit,
+            "Invalid date/time input leaked into normal composition or changed preedit.");
+    require(date_time_session.handle_command(metasequoia::Command::Cancel).handled &&
+                date_time_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Cancel did not leave date/time mode.");
+
+    require(date_time_session.handle_character('T', true).handled &&
+                date_time_session.handle_command(metasequoia::Command::Backspace).handled &&
+                date_time_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Backspace on a bare date/time prefix did not leave the mode.");
+
+    metasequoia::LocalModeOptions disabled_date_time_options;
+    disabled_date_time_options.date_time = false;
+    metasequoia::InputSession disabled_date_time(SchemeType::Quanpin);
+    disabled_date_time.set_local_mode_options(disabled_date_time_options);
+    require(disabled_date_time.handle_character('T', true).handled &&
+                disabled_date_time.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled date/time mode still intercepted Shift+T.");
+
+    metasequoia::InputSession wubi_date_time(SchemeType::Wubi);
+    require(wubi_date_time.handle_character('T', true).handled &&
+                wubi_date_time.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Date/time mode started outside a pinyin scheme.");
+
     std::filesystem::remove_all(data_directory);
     return 0;
 }
