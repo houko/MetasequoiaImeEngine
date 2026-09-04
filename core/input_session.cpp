@@ -3,6 +3,7 @@
 #include "../common/helpcode_utils.h"
 #include "../local_modes/date_time_query.h"
 #include "../local_modes/emoji_query.h"
+#include "../local_modes/jianpin_query.h"
 #include "../local_modes/kaomoji_query.h"
 #include "../local_modes/quick_phrase_query.h"
 #include "../local_modes/unicode_query.h"
@@ -114,6 +115,14 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     {
         local_input_mode_ = LocalInputMode::Kaomoji;
         local_preedit_ = "M";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    if (shift_only && character == 'J' && local_mode_options_.super_jianpin && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::SuperJianpin;
+        local_preedit_ = "J";
         local_candidates_.clear();
         return {true, std::nullopt, std::nullopt};
     }
@@ -362,7 +371,8 @@ void InputSession::set_local_mode_options(LocalModeOptions options)
         (local_input_mode_ == LocalInputMode::DateTime && !local_mode_options_.date_time) ||
         (local_input_mode_ == LocalInputMode::QuickPhrase && !local_mode_options_.quick_phrase) ||
         (local_input_mode_ == LocalInputMode::Emoji && !local_mode_options_.emoji) ||
-        (local_input_mode_ == LocalInputMode::Kaomoji && !local_mode_options_.kaomoji))
+        (local_input_mode_ == LocalInputMode::Kaomoji && !local_mode_options_.kaomoji) ||
+        (local_input_mode_ == LocalInputMode::SuperJianpin && !local_mode_options_.super_jianpin))
     {
         reset_composition();
     }
@@ -539,6 +549,17 @@ KeyResult InputSession::commit(std::size_t index)
 
 KeyResult InputSession::handle_local_character(char character)
 {
+    if (local_input_mode_ == LocalInputMode::SuperJianpin)
+    {
+        const bool ascii_letter = (character >= 'a' && character <= 'z') ||
+                                  (character >= 'A' && character <= 'Z');
+        if (!ascii_letter)
+        {
+            return {true, std::nullopt, std::nullopt};
+        }
+        local_preedit_.push_back(character);
+        return {true, std::nullopt, update_local_candidates()};
+    }
     if (local_input_mode_ == LocalInputMode::Emoji || local_input_mode_ == LocalInputMode::Kaomoji)
     {
         const bool ascii_letter = (character >= 'a' && character <= 'z') ||
@@ -618,8 +639,16 @@ std::optional<std::string> InputSession::update_local_candidates()
         local_candidates_ = std::move(result.candidates);
         return std::move(result.diagnostic);
     }
-    case LocalInputMode::None:
     case LocalInputMode::SuperJianpin:
+    {
+        const std::string code = local_preedit_.substr(1);
+        const int limit = code.size() == 1 ? 24 : 100;
+        local_modes::LocalQueryResult result =
+            local_modes::query_jianpin(code, scheme(), limit, shuangpin_profile_);
+        local_candidates_ = std::move(result.candidates);
+        return std::move(result.diagnostic);
+    }
+    case LocalInputMode::None:
     case LocalInputMode::TemporaryEnglish:
     case LocalInputMode::TemporaryJapanese:
         local_candidates_.clear();
@@ -800,13 +829,16 @@ std::optional<std::string> InputSession::learn_candidate(std::size_t index)
         return std::nullopt;
     }
 
+    const bool super_jianpin = local_input_mode_ == LocalInputMode::SuperJianpin;
     const bool wubi = scheme() == SchemeType::Wubi;
-    std::string context_key = wubi ? engine_.get_request().raw_input : engine_.get_request().normalized_segmentation;
-    if (context_key.empty())
+    std::string context_key = super_jianpin ?
+        local_modes::jianpin_ranking_context(local_preedit_.substr(1), scheme(), shuangpin_profile_) :
+        (wubi ? engine_.get_request().raw_input : engine_.get_request().normalized_segmentation);
+    if (!super_jianpin && context_key.empty())
     {
         context_key = engine_.get_request().segmentation;
     }
-    const std::string entry_key = wubi ? selected.pinyin
+    const std::string entry_key = (wubi && !super_jianpin) ? selected.pinyin
                                        : (selected.canonical_pinyin.empty() ? context_key
                                                                           : selected.canonical_pinyin);
     bool ranking_changed = false;
@@ -814,7 +846,8 @@ std::optional<std::string> InputSession::learn_candidate(std::size_t index)
         path_to_utf8(data_file_path("msime.db")), user_dictionary::default_user_db_path(), context_key,
         candidates(), entry_key, selected.word, frequency_mode_name(frequency_adjustment_.mode),
         frequency_adjustment_.linear_step, frequency_adjustment_.trigger_count, false, &ranking_changed,
-        wubi ? user_dictionary::DictionaryKind::Wubi : user_dictionary::DictionaryKind::Pinyin);
+        (wubi && !super_jianpin) ? user_dictionary::DictionaryKind::Wubi :
+                                  user_dictionary::DictionaryKind::Pinyin);
     if (!adjusted)
     {
         return std::string("Unable to persist candidate frequency adjustment.");
