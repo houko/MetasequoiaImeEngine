@@ -145,6 +145,10 @@ if(BUILD_TESTING)
     target_link_libraries(test_jianpin_input_session PRIVATE MetasequoiaIme::Engine)
     add_test(NAME jianpin_input_session COMMAND test_jianpin_input_session)
 
+    add_executable(test_temporary_input_session tests/src/test_temporary_input_session.cpp)
+    target_link_libraries(test_temporary_input_session PRIVATE MetasequoiaIme::Engine)
+    add_test(NAME temporary_input_session COMMAND test_temporary_input_session)
+
     add_executable(test_local_modes tests/src/test_local_modes.cpp)
     target_link_libraries(test_local_modes PRIVATE MetasequoiaIme::Engine)
     add_test(NAME local_modes COMMAND test_local_modes)
