@@ -1,6 +1,7 @@
 #include "input_session.h"
 
 #include "../common/helpcode_utils.h"
+#include "../local_modes/unicode_query.h"
 #include "../user_dictionary/user_dictionary_journal.h"
 #include "data_path.h"
 
@@ -36,12 +37,26 @@ InputSession::InputSession(SchemeType scheme_type) : engine_(scheme_type)
 {
 }
 
-KeyResult InputSession::handle_character(char character)
+KeyResult InputSession::handle_character(char character, bool shift_only)
 {
+    if (local_input_mode_ != LocalInputMode::None)
+    {
+        return handle_local_character(character);
+    }
+
     const auto unsigned_character = static_cast<unsigned char>(character);
     if (!std::isalpha(unsigned_character) && character != '\'')
     {
         return {};
+    }
+
+    if (shift_only && character == 'U' && local_mode_options_.unicode && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::Unicode;
+        local_preedit_ = "U";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
     }
 
     const ImeKeyCode key_code =
@@ -60,6 +75,19 @@ KeyResult InputSession::handle_command(Command command)
     switch (command)
     {
     case Command::Backspace:
+        if (local_input_mode_ != LocalInputMode::None)
+        {
+            if (local_preedit_.size() <= 1)
+            {
+                reset_composition();
+            }
+            else
+            {
+                local_preedit_.pop_back();
+                update_local_candidates();
+            }
+            return {true, std::nullopt, std::nullopt};
+        }
         engine_.handle_key(ImeKey::Backspace);
         return {true, std::nullopt, std::nullopt};
     case Command::CommitCandidate:
@@ -67,11 +95,11 @@ KeyResult InputSession::handle_command(Command command)
     case Command::CommitRaw:
     {
         std::string raw = preedit();
-        engine_.reset();
+        reset_composition();
         return {true, std::move(raw), std::nullopt};
     }
     case Command::Cancel:
-        engine_.reset();
+        reset_composition();
         return {true, std::nullopt, std::nullopt};
     }
     return {};
@@ -112,7 +140,7 @@ KeyResult InputSession::select_candidate_edge(std::size_t index, CandidateEdge e
         return {};
     }
 
-    engine_.reset();
+    reset_composition();
     return {true, std::move(character), std::nullopt};
 }
 
@@ -152,8 +180,28 @@ const FrequencyAdjustmentOptions &InputSession::frequency_adjustment() const
     return frequency_adjustment_;
 }
 
+void InputSession::set_local_mode_options(LocalModeOptions options)
+{
+    local_mode_options_ = options;
+    if (local_input_mode_ == LocalInputMode::Unicode && !local_mode_options_.unicode)
+    {
+        reset_composition();
+    }
+}
+
+const LocalModeOptions &InputSession::local_mode_options() const
+{
+    return local_mode_options_;
+}
+
+LocalInputMode InputSession::local_input_mode() const
+{
+    return local_input_mode_;
+}
+
 void InputSession::switch_scheme(SchemeType scheme_type)
 {
+    reset_composition();
     engine_.switch_scheme(scheme_type);
 }
 
@@ -169,21 +217,37 @@ bool InputSession::has_composition() const
 
 const std::string &InputSession::preedit() const
 {
+    if (local_input_mode_ != LocalInputMode::None)
+    {
+        return local_preedit_;
+    }
     return engine_.get_preedit();
 }
 
 const std::string &InputSession::raw_segmentation() const
 {
+    if (local_input_mode_ != LocalInputMode::None)
+    {
+        return local_preedit_;
+    }
     return engine_.get_request().raw_segmentation;
 }
 
 const std::string &InputSession::normalized_segmentation() const
 {
+    if (local_input_mode_ != LocalInputMode::None)
+    {
+        return local_preedit_;
+    }
     return engine_.get_request().normalized_segmentation;
 }
 
 const std::vector<WordItem> &InputSession::candidates() const
 {
+    if (local_input_mode_ != LocalInputMode::None)
+    {
+        return local_candidates_;
+    }
     return engine_.get_candidates();
 }
 
@@ -191,8 +255,54 @@ KeyResult InputSession::commit(std::size_t index)
 {
     std::string text = index < candidates().size() ? candidates()[index].word : preedit();
     std::optional<std::string> diagnostic = learn_candidate(index);
-    engine_.reset();
+    reset_composition();
     return {true, std::move(text), std::move(diagnostic)};
+}
+
+KeyResult InputSession::handle_local_character(char character)
+{
+    if (local_input_mode_ != LocalInputMode::Unicode)
+    {
+        return {};
+    }
+
+    const auto unsigned_character = static_cast<unsigned char>(character);
+    const bool optional_plus = character == '+' && local_preedit_ == "U";
+    if (!optional_plus && std::isxdigit(unsigned_character) == 0)
+    {
+        return {true, std::nullopt, std::nullopt};
+    }
+    local_preedit_.push_back(character);
+    update_local_candidates();
+    return {true, std::nullopt, std::nullopt};
+}
+
+void InputSession::update_local_candidates()
+{
+    switch (local_input_mode_)
+    {
+    case LocalInputMode::Unicode:
+        local_candidates_ = local_modes::query_unicode(local_preedit_.substr(1));
+        break;
+    case LocalInputMode::None:
+    case LocalInputMode::DateTime:
+    case LocalInputMode::QuickPhrase:
+    case LocalInputMode::Emoji:
+    case LocalInputMode::Kaomoji:
+    case LocalInputMode::SuperJianpin:
+    case LocalInputMode::TemporaryEnglish:
+    case LocalInputMode::TemporaryJapanese:
+        local_candidates_.clear();
+        break;
+    }
+}
+
+void InputSession::reset_composition()
+{
+    local_input_mode_ = LocalInputMode::None;
+    local_preedit_.clear();
+    local_candidates_.clear();
+    engine_.reset();
 }
 
 std::optional<std::string> InputSession::learn_candidate(std::size_t index)

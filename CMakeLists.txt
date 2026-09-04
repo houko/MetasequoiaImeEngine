@@ -35,6 +35,7 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     japanese/japanese_matrix_search.cpp
     japanese/japanese_sentence_decoder.cpp
     japanese/romaji_converter.cpp
+    local_modes/unicode_query.cpp
     providers/japanese_candidate_provider.cpp
     providers/pinyin_candidate_provider.cpp
     providers/provider_registry.cpp

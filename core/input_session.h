@@ -51,6 +51,31 @@ struct FrequencyAdjustmentOptions
     int linear_step = 1;
 };
 
+enum class LocalInputMode
+{
+    None,
+    Unicode,
+    DateTime,
+    QuickPhrase,
+    Emoji,
+    Kaomoji,
+    SuperJianpin,
+    TemporaryEnglish,
+    TemporaryJapanese,
+};
+
+struct LocalModeOptions
+{
+    bool unicode = true;
+    bool date_time = true;
+    bool quick_phrase = true;
+    bool emoji = true;
+    bool kaomoji = true;
+    bool super_jianpin = true;
+    bool temporary_english = true;
+    bool temporary_japanese = true;
+};
+
 // Platform-neutral composition session shared by the native frontends. It owns an ImeSession and
 // applies the key-handling and commit policy that each frontend would otherwise reimplement, so a
 // frontend only has to translate platform key events into these calls.
@@ -61,7 +86,7 @@ class InputSession
 
     // Feeds one printable character. Anything other than a letter or an apostrophe is rejected as
     // unhandled so the frontend can pass it through to the client application.
-    KeyResult handle_character(char character);
+    KeyResult handle_character(char character, bool shift_only = false);
     // Applies a command. Every command is unhandled while no composition is active, which keeps
     // Backspace and Escape working normally in the client application.
     KeyResult handle_command(Command command);
@@ -74,6 +99,9 @@ class InputSession
     static bool select_helpcode_schema(const std::string &schema);
     bool set_frequency_adjustment(FrequencyAdjustmentOptions options);
     const FrequencyAdjustmentOptions &frequency_adjustment() const;
+    void set_local_mode_options(LocalModeOptions options);
+    const LocalModeOptions &local_mode_options() const;
+    LocalInputMode local_input_mode() const;
 
     // Switching schemes discards the current composition. A frontend that promises to preserve
     // typed text must commit it before calling this method.
@@ -88,9 +116,16 @@ class InputSession
 
   private:
     KeyResult commit(std::size_t index);
+    KeyResult handle_local_character(char character);
+    void update_local_candidates();
+    void reset_composition();
     std::optional<std::string> learn_candidate(std::size_t index);
 
     ImeSession engine_;
     FrequencyAdjustmentOptions frequency_adjustment_;
+    LocalModeOptions local_mode_options_;
+    LocalInputMode local_input_mode_ = LocalInputMode::None;
+    std::string local_preedit_;
+    std::vector<WordItem> local_candidates_;
 };
 } // namespace metasequoia
