@@ -887,7 +887,7 @@ ReplayResult replay(const std::string &user_db_path, const std::string &main_db_
                     const std::string &english_db_path)
 {
     ReplayResult result;
-    if (!std::filesystem::exists(user_db_path)) return result;
+    if (!std::filesystem::exists(metasequoia::path_from_utf8(user_db_path.c_str()))) return result;
     auto journal = open_database(user_db_path, SQLITE_OPEN_READONLY);
     if (!journal)
     {
