@@ -89,6 +89,7 @@ class InputSession
     explicit InputSession(SchemeType scheme_type = SchemeType::Quanpin, bool quanpin_autocorrect_enabled = true,
                           bool helpcode_enabled = true, bool chinese_punctuation_enabled = true,
                           bool candidate_learning_enabled = true);
+    InputSession(SchemeType scheme_type, const ShuangpinProfile &shuangpin_profile);
 
     // Feeds one lowercase ASCII letter or an in-composition apostrophe. Other input is rejected as
     // unhandled so the frontend can pass it through to the client application.
@@ -143,6 +144,7 @@ class InputSession
     bool candidate_learning_enabled_ = true;
     bool next_double_quote_is_opening_ = true;
     bool next_single_quote_is_opening_ = true;
+    const ShuangpinProfile &shuangpin_profile_;
     FrequencyAdjustmentOptions frequency_adjustment_;
     bool frequency_adjustment_configured_ = false;
     LocalModeOptions local_mode_options_;

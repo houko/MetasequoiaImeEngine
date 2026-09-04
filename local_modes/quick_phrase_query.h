@@ -1,19 +1,13 @@
 #pragma once
 
-#include "../core/word_item.h"
+#include "local_query_result.h"
 
 #include <filesystem>
-#include <optional>
 #include <string>
-#include <vector>
 
 namespace metasequoia::local_modes
 {
-struct QuickPhraseQueryResult
-{
-    std::vector<WordItem> candidates;
-    std::optional<std::string> diagnostic;
-};
+using QuickPhraseQueryResult = LocalQueryResult;
 
 QuickPhraseQueryResult query_quick_phrases(const std::string &prefix, int limit = 100);
 QuickPhraseQueryResult query_quick_phrases(const std::string &prefix,

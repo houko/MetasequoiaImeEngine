@@ -1,4 +1,6 @@
 #include "../../local_modes/date_time_query.h"
+#include "../../local_modes/emoji_query.h"
+#include "../../local_modes/kaomoji_query.h"
 #include "../../local_modes/quick_phrase_query.h"
 #include "../../core/data_path.h"
 
@@ -174,6 +176,85 @@ int main()
                 corrupt_quick_phrases.diagnostic->find("secret") == std::string::npos &&
                 corrupt_quick_phrases.diagnostic->find("private-corrupt") == std::string::npos,
             "A corrupt quick-phrase database lacked a privacy-safe diagnostic.");
+
+    const std::filesystem::path others_database = quick_phrase_directory / "others.db";
+    {
+        Database database(others_database);
+        database.execute("CREATE TABLE emoji_pinyin(key TEXT,emoji TEXT,sort_order INTEGER)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xiaolian','😀',10)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xiaolian','😄',20)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xiaolian','😀',30)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xl','😀',10)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('laugh','😀',10)");
+        database.execute("INSERT INTO emoji_pinyin VALUES('xnlm','raw shuangpin match',40)");
+        database.execute("CREATE TABLE kaomoji(pinyin TEXT,jianpin TEXT,kaomoji TEXT,sort_order INTEGER)");
+        database.execute("INSERT INTO kaomoji VALUES('haixiu','hx','(*/ω＼*)',10)");
+        database.execute("INSERT INTO kaomoji VALUES('haixiu','hx','(^_^)',20)");
+        database.execute("INSERT INTO kaomoji VALUES('haixiu','hx','(*/ω＼*)',30)");
+        database.execute("INSERT INTO kaomoji VALUES('kiss','','( ˘ ³˘)♥',40)");
+        database.execute("INSERT INTO kaomoji VALUES('kind','','single prefix',50)");
+    }
+
+    const auto emoji = metasequoia::local_modes::query_emoji(
+        "XIAOLIAN", SchemeType::Quanpin, others_database, 10);
+    require(!emoji.diagnostic.has_value() && emoji.candidates.size() == 2 &&
+                emoji.candidates[0].word == "😀" && emoji.candidates[1].word == "😄" &&
+                emoji.candidates[0].pinyin == "xiaolian" &&
+                emoji.candidates[0].source == CandidateSource::Emoji,
+            "Emoji lookup did not normalize, order, or deduplicate full-pinyin matches.");
+    require(metasequoia::local_modes::query_emoji("xl", SchemeType::Quanpin, others_database, 10)
+                    .candidates.front().word == "😀" &&
+                metasequoia::local_modes::query_emoji("laugh", SchemeType::Quanpin, others_database, 10)
+                    .candidates.front().word == "😀",
+            "Emoji lookup did not support jianpin and English keywords.");
+    const auto shuangpin_emoji = metasequoia::local_modes::query_emoji(
+        "xnlm", SchemeType::Shuangpin, others_database, 10);
+    require(shuangpin_emoji.candidates.size() == 3 && shuangpin_emoji.candidates[0].word == "😀" &&
+                shuangpin_emoji.candidates[1].word == "😄" &&
+                shuangpin_emoji.candidates[2].word == "raw shuangpin match",
+            "Emoji lookup did not merge raw and Xiaohe-shuangpin prefixes in catalog order.");
+    require(metasequoia::local_modes::query_emoji("xiaolian", SchemeType::Quanpin, others_database, 1)
+                    .candidates.size() == 1 &&
+                metasequoia::local_modes::query_emoji("", SchemeType::Quanpin, others_database, 10)
+                    .candidates.empty() &&
+                metasequoia::local_modes::query_emoji("bad1", SchemeType::Quanpin, others_database, 10)
+                    .candidates.empty() &&
+                metasequoia::local_modes::query_emoji("x", SchemeType::Quanpin, others_database, 0)
+                    .candidates.empty(),
+            "Emoji lookup did not honor its validation and limit rules.");
+
+    const auto kaomoji = metasequoia::local_modes::query_kaomoji(
+        "HAIXIU", SchemeType::Quanpin, others_database, 10);
+    require(!kaomoji.diagnostic.has_value() && kaomoji.candidates.size() == 2 &&
+                kaomoji.candidates[0].word == "(*/ω＼*)" && kaomoji.candidates[1].word == "(^_^)" &&
+                kaomoji.candidates[0].pinyin == "haixiu" &&
+                kaomoji.candidates[0].source == CandidateSource::Kaomoji,
+            "Kaomoji lookup did not normalize, order, or deduplicate full-pinyin matches.");
+    require(metasequoia::local_modes::query_kaomoji("hx", SchemeType::Quanpin, others_database, 10)
+                    .candidates.front().word == "(*/ω＼*)" &&
+                metasequoia::local_modes::query_kaomoji("kiss", SchemeType::Quanpin, others_database, 10)
+                    .candidates.front().word == "( ˘ ³˘)♥" &&
+                !metasequoia::local_modes::query_kaomoji("k", SchemeType::Quanpin, others_database, 10)
+                     .candidates.empty(),
+            "Kaomoji lookup did not support jianpin, English, and single-letter prefixes.");
+    const auto shuangpin_kaomoji = metasequoia::local_modes::query_kaomoji(
+        "hx", SchemeType::Shuangpin, others_database, 10);
+    require(shuangpin_kaomoji.candidates.size() == 2 &&
+                shuangpin_kaomoji.candidates.front().word == "(*/ω＼*)",
+            "Kaomoji lookup did not expand Xiaohe shuangpin or deduplicate merged matches.");
+
+    const auto missing_emoji = metasequoia::local_modes::query_emoji(
+        "privatecode", SchemeType::Quanpin, quick_phrase_directory / "private-others-missing.db", 10);
+    require(missing_emoji.candidates.empty() && missing_emoji.diagnostic.has_value() &&
+                missing_emoji.diagnostic->find("privatecode") == std::string::npos &&
+                missing_emoji.diagnostic->find("private-others-missing") == std::string::npos,
+            "A missing Emoji database lacked a privacy-safe diagnostic.");
+    const auto corrupt_kaomoji = metasequoia::local_modes::query_kaomoji(
+        "privatecode", SchemeType::Quanpin, corrupt_database, 10);
+    require(corrupt_kaomoji.candidates.empty() && corrupt_kaomoji.diagnostic.has_value() &&
+                corrupt_kaomoji.diagnostic->find("privatecode") == std::string::npos &&
+                corrupt_kaomoji.diagnostic->find("private-corrupt") == std::string::npos,
+            "A corrupt kaomoji database lacked a privacy-safe diagnostic.");
     std::filesystem::remove_all(quick_phrase_directory);
     return 0;
 }

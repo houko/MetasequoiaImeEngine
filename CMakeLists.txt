@@ -36,6 +36,8 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     japanese/japanese_sentence_decoder.cpp
     japanese/romaji_converter.cpp
     local_modes/date_time_query.cpp
+    local_modes/emoji_query.cpp
+    local_modes/kaomoji_query.cpp
     local_modes/quick_phrase_query.cpp
     local_modes/unicode_query.cpp
     providers/japanese_candidate_provider.cpp
