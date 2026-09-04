@@ -117,6 +117,24 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
         local_candidates_.clear();
         return {true, std::nullopt, std::nullopt};
     }
+    if (shift_only && character == 'Y' && local_mode_options_.temporary_english && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::TemporaryEnglish;
+        local_preedit_ = "Y";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    if (shift_only && character == 'R' && local_mode_options_.temporary_japanese && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        temporary_original_scheme_ = scheme();
+        engine_.switch_scheme(SchemeType::JapaneseRomaji);
+        local_input_mode_ = LocalInputMode::TemporaryJapanese;
+        local_preedit_ = "R";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
 
     const ImeKeyCode key_code =
         character == '\'' ? ImeKey::Apostrophe : static_cast<ImeKeyCode>(std::toupper(unsigned_character));
@@ -148,6 +166,12 @@ KeyResult InputSession::handle_command(Command command)
             {
                 reset_composition();
             }
+            else if (local_input_mode_ == LocalInputMode::TemporaryJapanese)
+            {
+                engine_.handle_key(ImeKey::Backspace);
+                local_preedit_ = "R" + engine_.get_preedit();
+                local_candidates_ = engine_.get_candidates();
+            }
             else
             {
                 local_preedit_.pop_back();
@@ -163,6 +187,12 @@ KeyResult InputSession::handle_command(Command command)
     case Command::CommitRaw:
     {
         std::string raw = preedit();
+        if ((local_input_mode_ == LocalInputMode::TemporaryEnglish ||
+             local_input_mode_ == LocalInputMode::TemporaryJapanese) &&
+            !raw.empty())
+        {
+            raw.erase(raw.begin());
+        }
         std::optional<std::string> diagnostic;
         if (dedicated_english_mode_ &&
             !user_dictionary::learn_entered_english_word(
@@ -263,7 +293,9 @@ void InputSession::set_local_mode_options(LocalModeOptions options)
         (local_input_mode_ == LocalInputMode::QuickPhrase && !local_mode_options_.quick_phrase) ||
         (local_input_mode_ == LocalInputMode::Emoji && !local_mode_options_.emoji) ||
         (local_input_mode_ == LocalInputMode::Kaomoji && !local_mode_options_.kaomoji) ||
-        (local_input_mode_ == LocalInputMode::SuperJianpin && !local_mode_options_.super_jianpin))
+        (local_input_mode_ == LocalInputMode::SuperJianpin && !local_mode_options_.super_jianpin) ||
+        (local_input_mode_ == LocalInputMode::TemporaryEnglish && !local_mode_options_.temporary_english) ||
+        (local_input_mode_ == LocalInputMode::TemporaryJapanese && !local_mode_options_.temporary_japanese))
     {
         reset_composition();
     }
@@ -335,7 +367,7 @@ void InputSession::switch_scheme(SchemeType scheme_type)
 
 SchemeType InputSession::scheme() const
 {
-    return engine_.current_scheme_type();
+    return temporary_original_scheme_.value_or(engine_.current_scheme_type());
 }
 
 bool InputSession::has_composition() const
@@ -407,7 +439,17 @@ const std::vector<WordItem> &InputSession::candidates() const
 
 KeyResult InputSession::commit(std::size_t index)
 {
-    std::string text = index < candidates().size() ? candidates()[index].word : preedit();
+    std::optional<std::string> text;
+    if (index < candidates().size())
+    {
+        text = candidates()[index].word;
+    }
+    else if (!((local_input_mode_ == LocalInputMode::TemporaryEnglish ||
+                local_input_mode_ == LocalInputMode::TemporaryJapanese) &&
+               local_preedit_.size() == 1))
+    {
+        text = preedit();
+    }
     std::optional<std::string> diagnostic = learn_candidate(index);
     reset_composition();
     return {true, std::move(text), std::move(diagnostic)};
@@ -415,6 +457,31 @@ KeyResult InputSession::commit(std::size_t index)
 
 KeyResult InputSession::handle_local_character(char character)
 {
+    if (local_input_mode_ == LocalInputMode::TemporaryEnglish)
+    {
+        const bool ascii_letter = (character >= 'a' && character <= 'z') ||
+                                  (character >= 'A' && character <= 'Z');
+        if (!ascii_letter)
+        {
+            return {};
+        }
+        local_preedit_.push_back(character);
+        return {true, std::nullopt, update_local_candidates()};
+    }
+    if (local_input_mode_ == LocalInputMode::TemporaryJapanese)
+    {
+        const auto unsigned_character = static_cast<unsigned char>(character);
+        if (!std::isalpha(unsigned_character) && character != '\'')
+        {
+            return {};
+        }
+        const ImeKeyCode key_code = character == '\'' ? ImeKey::Apostrophe :
+                                                        static_cast<ImeKeyCode>(std::toupper(unsigned_character));
+        engine_.handle_key(key_code, 0, static_cast<ImeCharacter>(unsigned_character));
+        local_preedit_ = "R" + engine_.get_preedit();
+        local_candidates_ = engine_.get_candidates();
+        return {true, std::nullopt, std::nullopt};
+    }
     if (local_input_mode_ == LocalInputMode::SuperJianpin)
     {
         const bool ascii_letter = (character >= 'a' && character <= 'z') ||
@@ -514,9 +581,40 @@ std::optional<std::string> InputSession::update_local_candidates()
         local_candidates_ = std::move(result.candidates);
         return std::move(result.diagnostic);
     }
-    case LocalInputMode::None:
     case LocalInputMode::TemporaryEnglish:
+    {
+        const std::string raw = local_preedit_.substr(1);
+        local_candidates_.clear();
+        if (raw.empty())
+        {
+            return std::nullopt;
+        }
+        local_candidates_.emplace_back("", raw, 0, CandidateSource::Generated);
+        std::string prefix = raw;
+        std::transform(prefix.begin(), prefix.end(), prefix.begin(), [](unsigned char character) {
+            return static_cast<char>(std::tolower(character));
+        });
+        auto completions = english_dictionary().query_prefix(prefix, 1000);
+        completions.erase(std::remove_if(completions.begin(), completions.end(), [&](const WordItem &candidate) {
+                              if (candidate.word.size() != raw.size())
+                              {
+                                  return false;
+                              }
+                              return std::equal(candidate.word.begin(), candidate.word.end(), raw.begin(),
+                                                [](unsigned char left, unsigned char right) {
+                                                    return std::tolower(left) == std::tolower(right);
+                                                });
+                          }),
+                          completions.end());
+        local_candidates_.insert(local_candidates_.end(),
+                                 std::make_move_iterator(completions.begin()),
+                                 std::make_move_iterator(completions.end()));
+        return std::nullopt;
+    }
     case LocalInputMode::TemporaryJapanese:
+        local_candidates_ = engine_.get_candidates();
+        return std::nullopt;
+    case LocalInputMode::None:
         local_candidates_.clear();
         return std::nullopt;
     }
@@ -639,30 +737,42 @@ EnglishDictionary &InputSession::english_dictionary()
 
 void InputSession::reset_composition()
 {
+    const std::optional<SchemeType> original_scheme = temporary_original_scheme_;
     local_input_mode_ = LocalInputMode::None;
+    temporary_original_scheme_.reset();
     local_preedit_.clear();
     local_candidates_.clear();
     dedicated_english_preedit_.clear();
     dedicated_english_candidates_.clear();
     mixed_candidates_.clear();
     engine_.reset();
+    if (original_scheme.has_value() && engine_.current_scheme_type() != *original_scheme)
+    {
+        engine_.switch_scheme(*original_scheme);
+    }
 }
 
 std::optional<std::string> InputSession::learn_candidate(std::size_t index)
 {
-    if (dedicated_english_mode_ && index < candidates().size() &&
+    const bool temporary_english = local_input_mode_ == LocalInputMode::TemporaryEnglish;
+    if ((dedicated_english_mode_ || temporary_english) && index < candidates().size() &&
         candidates()[index].source == CandidateSource::EnglishDictionary &&
         frequency_adjustment_.mode != FrequencyAdjustmentMode::Disabled && index != 0)
     {
-        std::string context = dedicated_english_preedit_;
+        std::string context = temporary_english ? local_preedit_.substr(1) : dedicated_english_preedit_;
         std::transform(context.begin(), context.end(), context.begin(), [](unsigned char character) {
             return static_cast<char>(std::tolower(character));
         });
         const WordItem &selected = candidates()[index];
+        std::vector<WordItem> ranked_candidates;
+        std::copy_if(candidates().begin(), candidates().end(), std::back_inserter(ranked_candidates),
+                     [](const WordItem &candidate) {
+                         return candidate.source == CandidateSource::EnglishDictionary;
+                     });
         bool ranking_changed = false;
         const bool adjusted = user_dictionary::adjust_english_candidate_ranking(
             path_to_utf8(data_file_path("english.db")), user_dictionary::default_user_db_path(),
-            "english:" + context, candidates(), selected.pinyin, selected.word,
+            "english:" + context, ranked_candidates, selected.pinyin, selected.word,
             frequency_mode_name(frequency_adjustment_.mode), frequency_adjustment_.linear_step,
             frequency_adjustment_.trigger_count, false, &ranking_changed);
         return adjusted ? std::nullopt : std::optional<std::string>(
@@ -676,7 +786,7 @@ std::optional<std::string> InputSession::learn_candidate(std::size_t index)
 
     const WordItem &selected = candidates()[index];
     if ((selected.source != CandidateSource::Database && selected.source != CandidateSource::UserDatabase) ||
-        scheme() == SchemeType::JapaneseRomaji)
+        engine_.current_scheme_type() == SchemeType::JapaneseRomaji)
     {
         return std::nullopt;
     }

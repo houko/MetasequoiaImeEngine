@@ -160,6 +160,7 @@ class InputSession
     std::vector<WordItem> dedicated_english_candidates_;
     std::vector<WordItem> mixed_candidates_;
     LocalInputMode local_input_mode_ = LocalInputMode::None;
+    std::optional<SchemeType> temporary_original_scheme_;
     std::string local_preedit_;
     std::vector<WordItem> local_candidates_;
     std::function<local_modes::LocalDateTime()> local_date_time_provider_;
