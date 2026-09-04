@@ -1,6 +1,8 @@
 #include "input_session.h"
 
 #include "../common/helpcode_utils.h"
+#include "../user_dictionary/user_dictionary_journal.h"
+#include "data_path.h"
 
 #include <algorithm>
 #include <cctype>
@@ -8,6 +10,27 @@
 
 namespace metasequoia
 {
+namespace
+{
+const char *frequency_mode_name(FrequencyAdjustmentMode mode)
+{
+    switch (mode)
+    {
+    case FrequencyAdjustmentMode::Disabled:
+        return "disabled";
+    case FrequencyAdjustmentMode::Pin:
+        return "pin";
+    case FrequencyAdjustmentMode::Halve:
+        return "halve";
+    case FrequencyAdjustmentMode::Linear:
+        return "linear";
+    case FrequencyAdjustmentMode::Promote:
+        return "promote";
+    }
+    return nullptr;
+}
+} // namespace
+
 InputSession::InputSession(SchemeType scheme_type, bool quanpin_autocorrect_enabled, bool helpcode_enabled,
                            bool chinese_punctuation_enabled, bool candidate_learning_enabled)
     : engine_(scheme_type), quanpin_autocorrect_enabled_(quanpin_autocorrect_enabled),
@@ -35,7 +58,7 @@ KeyResult InputSession::handle_character(char character)
     const ImeKeyCode key_code =
         character == '\'' ? ImeKey::Apostrophe : static_cast<ImeKeyCode>(std::toupper(unsigned_character));
     engine_.handle_key(key_code, 0, static_cast<ImeCharacter>(unsigned_character));
-    return {preedit() != previous_preedit, std::nullopt};
+    return {preedit() != previous_preedit, std::nullopt, std::nullopt};
 }
 
 KeyResult InputSession::handle_candidate_key(char character)
@@ -109,6 +132,7 @@ KeyResult InputSession::handle_punctuation(char character)
     }
 
     std::string text;
+    std::optional<std::string> diagnostic;
     if (has_composition())
     {
         if (candidates().empty())
@@ -117,14 +141,13 @@ KeyResult InputSession::handle_punctuation(char character)
         }
         else
         {
-            const WordItem candidate = candidates().front();
-            text = candidate.word;
-            learn_candidate(candidate);
+            text = candidates().front().word;
+            diagnostic = learn_candidate(0);
         }
         engine_.reset();
     }
     text += punctuation;
-    return {true, std::move(text)};
+    return {true, std::move(text), std::move(diagnostic)};
 }
 
 KeyResult InputSession::handle_command(Command command)
@@ -138,17 +161,17 @@ KeyResult InputSession::handle_command(Command command)
     {
     case Command::Backspace:
         engine_.handle_key(ImeKey::Backspace);
-        return {true, std::nullopt};
+        return {true, std::nullopt, std::nullopt};
     case Command::CommitCandidate:
         return commit(0);
     case Command::CommitRaw: {
         std::string raw = preedit();
         engine_.reset();
-        return {true, std::move(raw)};
+        return {true, std::move(raw), std::nullopt};
     }
     case Command::Cancel:
         engine_.reset();
-        return {true, std::nullopt};
+        return {true, std::nullopt, std::nullopt};
     }
     return {};
 }
@@ -189,7 +212,7 @@ KeyResult InputSession::select_candidate_edge(std::size_t index, CandidateEdge e
     }
 
     engine_.reset();
-    return {true, std::move(character)};
+    return {true, std::move(character), std::nullopt};
 }
 
 void InputSession::set_shuangpin_helpcode_enabled(bool enabled)
@@ -210,6 +233,23 @@ bool InputSession::is_supported_helpcode_schema(const std::string &schema)
 bool InputSession::select_helpcode_schema(const std::string &schema)
 {
     return HelpcodeUtils::select_helpcode_schema(schema);
+}
+
+bool InputSession::set_frequency_adjustment(FrequencyAdjustmentOptions options)
+{
+    if (frequency_mode_name(options.mode) == nullptr || options.trigger_count < 1 || options.trigger_count > 10 ||
+        options.linear_step < 1 || options.linear_step > 10)
+    {
+        return false;
+    }
+    frequency_adjustment_ = options;
+    frequency_adjustment_configured_ = true;
+    return true;
+}
+
+const FrequencyAdjustmentOptions &InputSession::frequency_adjustment() const
+{
+    return frequency_adjustment_;
 }
 
 void InputSession::switch_scheme(SchemeType scheme_type)
@@ -274,32 +314,61 @@ bool InputSession::candidate_learning_enabled() const
 
 KeyResult InputSession::commit(std::size_t index)
 {
-    if (index >= candidates().size())
-    {
-        std::string text = preedit();
-        engine_.reset();
-        return {true, std::move(text)};
-    }
-
-    const WordItem candidate = candidates()[index];
-    std::string text = candidate.word;
-    learn_candidate(candidate);
+    std::string text = index < candidates().size() ? candidates()[index].word : preedit();
+    std::optional<std::string> diagnostic = learn_candidate(index);
     engine_.reset();
-    return {true, std::move(text)};
+    return {true, std::move(text), std::move(diagnostic)};
 }
 
-void InputSession::learn_candidate(const WordItem &candidate)
+std::optional<std::string> InputSession::learn_candidate(std::size_t index)
 {
-    if (!candidate_learning_enabled_)
+    if (!candidate_learning_enabled_ || index >= candidates().size())
     {
-        return;
-    }
-    if (candidate.source != CandidateSource::Database && candidate.source != CandidateSource::UserDatabase)
-    {
-        return;
+        return std::nullopt;
     }
 
-    const std::string &pinyin = candidate.canonical_pinyin.empty() ? candidate.pinyin : candidate.canonical_pinyin;
-    (void)engine_.update_weight_by_pinyin_and_word(pinyin, candidate.word);
+    const WordItem &selected = candidates()[index];
+    if ((selected.source != CandidateSource::Database && selected.source != CandidateSource::UserDatabase) ||
+        scheme() == SchemeType::JapaneseRomaji)
+    {
+        return std::nullopt;
+    }
+
+    if (!frequency_adjustment_configured_)
+    {
+        const std::string &pinyin =
+            selected.canonical_pinyin.empty() ? selected.pinyin : selected.canonical_pinyin;
+        (void)engine_.update_weight_by_pinyin_and_word(pinyin, selected.word);
+        return std::nullopt;
+    }
+    if (frequency_adjustment_.mode == FrequencyAdjustmentMode::Disabled || index == 0)
+    {
+        return std::nullopt;
+    }
+
+    const bool wubi = scheme() == SchemeType::Wubi;
+    std::string context_key = wubi ? engine_.get_request().raw_input : engine_.get_request().normalized_segmentation;
+    if (context_key.empty())
+    {
+        context_key = engine_.get_request().segmentation;
+    }
+    const std::string entry_key = wubi ? selected.pinyin
+                                       : (selected.canonical_pinyin.empty() ? context_key
+                                                                          : selected.canonical_pinyin);
+    bool ranking_changed = false;
+    const bool adjusted = user_dictionary::adjust_candidate_ranking(
+        path_to_utf8(data_file_path("msime.db")), user_dictionary::default_user_db_path(), context_key,
+        candidates(), entry_key, selected.word, frequency_mode_name(frequency_adjustment_.mode),
+        frequency_adjustment_.linear_step, frequency_adjustment_.trigger_count, false, &ranking_changed,
+        wubi ? user_dictionary::DictionaryKind::Wubi : user_dictionary::DictionaryKind::Pinyin);
+    if (!adjusted)
+    {
+        return std::string("Unable to persist candidate frequency adjustment.");
+    }
+    if (ranking_changed)
+    {
+        engine_.reset_cache();
+    }
+    return std::nullopt;
 }
 } // namespace metasequoia

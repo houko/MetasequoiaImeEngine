@@ -5,6 +5,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -42,6 +43,20 @@ class Database
         }
     }
 
+    std::int64_t query_integer(const char *sql)
+    {
+        sqlite3_stmt *statement = nullptr;
+        if (sqlite3_prepare_v2(database_, sql, -1, &statement, nullptr) != SQLITE_OK ||
+            sqlite3_step(statement) != SQLITE_ROW)
+        {
+            sqlite3_finalize(statement);
+            throw std::runtime_error("Failed to query the input-session test dictionary.");
+        }
+        const std::int64_t value = sqlite3_column_int64(statement, 0);
+        sqlite3_finalize(statement);
+        return value;
+    }
+
   private:
     sqlite3 *database_ = nullptr;
 };
@@ -74,6 +89,49 @@ void write_file(const std::filesystem::path &path, const std::string &contents)
     {
         throw std::runtime_error("Failed to prepare an input-session helpcode fixture.");
     }
+}
+
+void set_data_directory(const std::filesystem::path &directory)
+{
+#ifdef _WIN32
+    if (_wputenv_s(L"METASEQUOIA_IME_DATA_DIR", directory.c_str()) != 0)
+#else
+    if (setenv("METASEQUOIA_IME_DATA_DIR", metasequoia::path_to_utf8(directory).c_str(), 1) != 0)
+#endif
+    {
+        throw std::runtime_error("Failed to set the data directory override.");
+    }
+}
+
+void prepare_frequency_fixture(const std::filesystem::path &directory)
+{
+    std::filesystem::create_directories(directory);
+    Database database(directory / "msime.db");
+    database.execute("CREATE TABLE tbl_1_n(key TEXT, jp TEXT, value TEXT, weight INTEGER)");
+    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '甲', 100)");
+    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '乙', 90)");
+    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '丙', 80)");
+    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '丁', 70)");
+    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '戊', 60)");
+    database.execute("INSERT INTO tbl_1_n VALUES('ni', 'n', '己', 50)");
+}
+
+void prepare_shuangpin_frequency_fixture(const std::filesystem::path &directory)
+{
+    std::filesystem::create_directories(directory);
+    Database database(directory / "msime.db");
+    database.execute("CREATE TABLE tbl_2_n(key TEXT, jp TEXT, value TEXT, weight INTEGER)");
+    database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '你好', 100)");
+    database.execute("INSERT INTO tbl_2_n VALUES('ni''hao', 'nh', '拟好', 50)");
+}
+
+void prepare_wubi_frequency_fixture(const std::filesystem::path &directory)
+{
+    std::filesystem::create_directories(directory);
+    Database database(directory / "msime.db");
+    database.execute("CREATE TABLE wubi86(key TEXT, value TEXT, weight INTEGER)");
+    database.execute("INSERT INTO wubi86 VALUES('aaaa', '工', 100)");
+    database.execute("INSERT INTO wubi86 VALUES('aaaa', '或', 50)");
 }
 
 std::size_t candidate_index(const metasequoia::InputSession &session, const std::string &word)
@@ -111,14 +169,7 @@ int run_test()
     const std::filesystem::path data_directory =
         std::filesystem::temp_directory_path() / std::filesystem::u8path("metasequoia-session-词库-" + unique_suffix);
     std::filesystem::create_directories(data_directory);
-#ifdef _WIN32
-    if (_wputenv_s(L"METASEQUOIA_IME_DATA_DIR", data_directory.c_str()) != 0)
-#else
-    if (setenv("METASEQUOIA_IME_DATA_DIR", metasequoia::path_to_utf8(data_directory).c_str(), 1) != 0)
-#endif
-    {
-        throw std::runtime_error("Failed to set the data directory override.");
-    }
+    set_data_directory(data_directory);
 
     {
         const std::filesystem::path helpcode_directory = data_directory / "helpcodes";
@@ -373,7 +424,164 @@ int run_test()
         require(!session.handle_character('\'').handled, "An idle apostrophe was swallowed.");
     }
 
+    struct FrequencyCase
+    {
+        metasequoia::FrequencyAdjustmentMode mode;
+        const char *name;
+        std::size_t expected_index;
+        int linear_step;
+    };
+    const std::array frequency_cases{
+        FrequencyCase{metasequoia::FrequencyAdjustmentMode::Disabled, "disabled", 5, 1},
+        FrequencyCase{metasequoia::FrequencyAdjustmentMode::Pin, "pin", 0, 1},
+        FrequencyCase{metasequoia::FrequencyAdjustmentMode::Halve, "halve", 2, 1},
+        FrequencyCase{metasequoia::FrequencyAdjustmentMode::Linear, "linear", 3, 2},
+        FrequencyCase{metasequoia::FrequencyAdjustmentMode::Promote, "promote", 4, 1},
+    };
+    for (const FrequencyCase &frequency_case : frequency_cases)
+    {
+        user_dictionary::close_default_user_database();
+        const std::filesystem::path directory = data_directory / (std::string("frequency-") + frequency_case.name);
+        prepare_frequency_fixture(directory);
+        set_data_directory(directory);
+
+        metasequoia::InputSession learning_session(SchemeType::Quanpin);
+        require(learning_session.set_frequency_adjustment(
+                    {frequency_case.mode, 1, frequency_case.linear_step}),
+                "A supported frequency adjustment configuration was rejected.");
+        type(learning_session, "ni");
+        const auto learned = learning_session.select_candidate(std::string("己"));
+        require(learned.handled && learned.commit == "己" && !learned.diagnostic.has_value(),
+                "Frequency learning changed or diagnosed a successful candidate commit.");
+
+        metasequoia::InputSession reopened(SchemeType::Quanpin);
+        type(reopened, "ni");
+        require(candidate_index(reopened, "己") == frequency_case.expected_index,
+                "A frequency mode did not persist the Windows-compatible ranking transition.");
+        const bool journal_exists = std::filesystem::exists(directory / "msime_user.db");
+        require(journal_exists == (frequency_case.mode != metasequoia::FrequencyAdjustmentMode::Disabled),
+                "Frequency learning wrote an unexpected user journal state.");
+    }
+
     user_dictionary::close_default_user_database();
+    const std::filesystem::path trigger_directory = data_directory / "frequency-trigger";
+    prepare_frequency_fixture(trigger_directory);
+    set_data_directory(trigger_directory);
+    for (int selection = 0; selection < 2; ++selection)
+    {
+        metasequoia::InputSession triggered(SchemeType::Quanpin);
+        require(triggered.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 2, 1}),
+                "A valid trigger-count configuration was rejected.");
+        type(triggered, "ni");
+        require(triggered.select_candidate(std::string("己")).commit == "己",
+                "A deferred frequency adjustment blocked candidate commit.");
+
+        metasequoia::InputSession observed(SchemeType::Quanpin);
+        type(observed, "ni");
+        require(candidate_index(observed, "己") == (selection == 0 ? 5U : 0U),
+                "Frequency trigger_count did not defer exactly the configured number of selections.");
+    }
+
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path first_candidate_directory = data_directory / "frequency-first-candidate";
+    prepare_frequency_fixture(first_candidate_directory);
+    set_data_directory(first_candidate_directory);
+    metasequoia::InputSession first_candidate_session(SchemeType::Quanpin);
+    require(first_candidate_session.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 1, 1}),
+            "A valid first-candidate learning configuration was rejected.");
+    type(first_candidate_session, "ni");
+    require(first_candidate_session.select_candidate(static_cast<std::size_t>(0)).commit == "甲" &&
+                !std::filesystem::exists(first_candidate_directory / "msime_user.db"),
+            "Selecting the already-leading candidate created frequency state.");
+
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path shuangpin_directory = data_directory / "frequency-shuangpin";
+    prepare_shuangpin_frequency_fixture(shuangpin_directory);
+    set_data_directory(shuangpin_directory);
+    metasequoia::InputSession shuangpin_learning(SchemeType::Shuangpin);
+    require(shuangpin_learning.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 1, 1}),
+            "A valid Shuangpin frequency configuration was rejected.");
+    type(shuangpin_learning, "nihc");
+    require(shuangpin_learning.select_candidate(std::string("拟好")).commit == "拟好",
+            "Shuangpin frequency learning blocked candidate commit.");
+    metasequoia::InputSession reopened_shuangpin(SchemeType::Shuangpin);
+    type(reopened_shuangpin, "nihc");
+    require(!reopened_shuangpin.candidates().empty() && reopened_shuangpin.candidates().front().word == "拟好",
+            "Shuangpin frequency learning did not persist through the canonical pinyin key.");
+
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path wubi_directory = data_directory / "frequency-wubi";
+    prepare_wubi_frequency_fixture(wubi_directory);
+    set_data_directory(wubi_directory);
+    metasequoia::InputSession wubi_learning(SchemeType::Wubi);
+    require(wubi_learning.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 1, 1}),
+            "A valid Wubi frequency configuration was rejected.");
+    type(wubi_learning, "aaaa");
+    require(wubi_learning.select_candidate(std::string("或")).commit == "或",
+            "Wubi frequency learning blocked candidate commit.");
+    metasequoia::InputSession reopened_wubi(SchemeType::Wubi);
+    type(reopened_wubi, "aaaa");
+    require(!reopened_wubi.candidates().empty() && reopened_wubi.candidates().front().word == "或",
+            "Wubi frequency learning did not persist through the Wubi table.");
+
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path failure_directory = data_directory / "frequency-write-failure";
+    prepare_frequency_fixture(failure_directory);
+    std::filesystem::create_directory(failure_directory / "msime_user.db");
+    set_data_directory(failure_directory);
+    metasequoia::InputSession failing_learning_session(SchemeType::Quanpin);
+    require(failing_learning_session.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 1, 1}),
+            "A valid write-failure learning configuration was rejected.");
+    type(failing_learning_session, "ni");
+    const auto failure_commit = failing_learning_session.select_candidate(std::string("己"));
+    require(failure_commit.handled && failure_commit.commit == "己" && failure_commit.diagnostic.has_value() &&
+                failure_commit.diagnostic->find("己") == std::string::npos &&
+                failure_commit.diagnostic->find("ni") == std::string::npos,
+            "A frequency write failure blocked commit or exposed input text in its diagnostic.");
+
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path partial_write_directory = data_directory / "frequency-partial-write";
+    prepare_frequency_fixture(partial_write_directory);
+    set_data_directory(partial_write_directory);
+    require(user_dictionary::ensure_user_database(user_dictionary::default_user_db_path()),
+            "The partial-write fixture could not create the user dictionary schema.");
+    user_dictionary::close_default_user_database();
+    {
+        Database user_database(partial_write_directory / "msime_user.db");
+        user_database.execute(
+            "CREATE TRIGGER reject_frequency_journal BEFORE INSERT ON user_dictionary_operations "
+            "BEGIN SELECT RAISE(FAIL, 'injected journal failure'); END");
+    }
+    metasequoia::InputSession partial_write_session(SchemeType::Quanpin);
+    require(partial_write_session.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 1, 1}),
+            "A valid partial-write learning configuration was rejected.");
+    type(partial_write_session, "ni");
+    const auto partial_write_commit = partial_write_session.select_candidate(std::string("己"));
+    require(partial_write_commit.handled && partial_write_commit.commit == "己" &&
+                partial_write_commit.diagnostic.has_value() &&
+                partial_write_commit.diagnostic->find("己") == std::string::npos &&
+                partial_write_commit.diagnostic->find("ni") == std::string::npos,
+            "A partial frequency write blocked commit or exposed input text in its diagnostic.");
+    {
+        Database main_database(partial_write_directory / "msime.db");
+        require(main_database.query_integer("SELECT weight FROM tbl_1_n WHERE key='ni' AND value='己'") == 50,
+                "A failed journal write left a partial frequency update in the main dictionary.");
+    }
+
+    metasequoia::FrequencyAdjustmentOptions invalid_frequency;
+    invalid_frequency.mode = static_cast<metasequoia::FrequencyAdjustmentMode>(99);
+    require(!failing_learning_session.set_frequency_adjustment(invalid_frequency),
+            "An unknown frequency mode was accepted.");
+    invalid_frequency = {};
+    invalid_frequency.trigger_count = 0;
+    require(!failing_learning_session.set_frequency_adjustment(invalid_frequency),
+            "An out-of-range frequency trigger count was accepted.");
+    invalid_frequency = {};
+    invalid_frequency.linear_step = 11;
+    require(!failing_learning_session.set_frequency_adjustment(invalid_frequency),
+            "An out-of-range frequency linear step was accepted.");
+    user_dictionary::close_default_user_database();
+
     std::filesystem::remove_all(data_directory);
     return 0;
 }

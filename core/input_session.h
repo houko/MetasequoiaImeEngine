@@ -26,12 +26,29 @@ struct KeyResult
 {
     bool handled = false;
     std::optional<std::string> commit;
+    std::optional<std::string> diagnostic;
 };
 
 enum class CandidateEdge
 {
     FirstHan,
     LastHan,
+};
+
+enum class FrequencyAdjustmentMode
+{
+    Disabled,
+    Pin,
+    Halve,
+    Linear,
+    Promote,
+};
+
+struct FrequencyAdjustmentOptions
+{
+    FrequencyAdjustmentMode mode = FrequencyAdjustmentMode::Disabled;
+    int trigger_count = 1;
+    int linear_step = 1;
 };
 
 // Platform-neutral composition session shared by the native frontends. It owns an ImeSession and
@@ -62,6 +79,8 @@ class InputSession
     void set_quanpin_helpcode_enabled(bool enabled);
     static bool is_supported_helpcode_schema(const std::string &schema);
     static bool select_helpcode_schema(const std::string &schema);
+    bool set_frequency_adjustment(FrequencyAdjustmentOptions options);
+    const FrequencyAdjustmentOptions &frequency_adjustment() const;
 
     SchemeType scheme_type() const;
     bool quanpin_autocorrect_enabled() const;
@@ -81,7 +100,7 @@ class InputSession
 
   private:
     KeyResult commit(std::size_t index);
-    void learn_candidate(const WordItem &candidate);
+    std::optional<std::string> learn_candidate(std::size_t index);
 
     ImeSession engine_;
     bool quanpin_autocorrect_enabled_ = true;
@@ -90,5 +109,7 @@ class InputSession
     bool candidate_learning_enabled_ = true;
     bool next_double_quote_is_opening_ = true;
     bool next_single_quote_is_opening_ = true;
+    FrequencyAdjustmentOptions frequency_adjustment_;
+    bool frequency_adjustment_configured_ = false;
 };
 } // namespace metasequoia
